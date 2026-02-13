@@ -1,0 +1,502 @@
+{
+    "consumes": [
+        "application/json"
+    ],
+    "produces": [
+        "application/json"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Pull-through caching proxy for OCI container registries.\n\nBarnacle provides a distributed caching layer in front of upstream\ncontainer registries, with multi-node coordination via Redis.",
+        "title": "Barnacle API",
+        "contact": {
+            "name": "Barnacle Support",
+            "url": "https://github.com/pdylanross/barnacle/issues"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/v1/nodes": {
+            "get": {
+                "description": "Returns a list of all registered nodes in the cluster",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "List nodes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodesapi.ListNodesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/me": {
+            "get": {
+                "description": "Returns information about this node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "Get current node",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodesapi.NodeResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeId}": {
+            "get": {
+                "description": "Returns information about a specific node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "Get node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodesapi.NodeResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeId}/blobs": {
+            "get": {
+                "description": "Returns all blobs cached on the specified node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blobs"
+                ],
+                "summary": "List blobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/blobsapi.ListBlobsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeId}/blobs/{digest}": {
+            "get": {
+                "description": "Returns information about a specific blob on the node",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blobs"
+                ],
+                "summary": "Get blob",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Blob digest",
+                        "name": "digest",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/blobsapi.BlobResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a specific blob from the node's cache",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blobs"
+                ],
+                "summary": "Delete blob",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Blob digest",
+                        "name": "digest",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upstreams": {
+            "get": {
+                "description": "Returns a list of all configured upstream registry aliases",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "upstreams"
+                ],
+                "summary": "List upstreams",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/upstreamsapi.ListUpstreamsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upstreams/{alias}": {
+            "get": {
+                "description": "Returns details for a specific upstream registry",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "upstreams"
+                ],
+                "summary": "Get upstream",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Upstream alias",
+                        "name": "alias",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/upstreamsapi.GetUpstreamResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Health status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "blobsapi.BlobResponse": {
+            "type": "object",
+            "properties": {
+                "accessCount5m": {
+                    "description": "AccessCount5m is the number of accesses in the last 5 minutes.",
+                    "type": "integer",
+                    "example": 42
+                },
+                "digest": {
+                    "description": "Digest is the content-addressable digest of the blob (e.g., \"sha256:abc123...\").",
+                    "type": "string",
+                    "example": "sha256:abc123def456..."
+                },
+                "diskPath": {
+                    "description": "DiskPath is the filesystem path where the blob is stored.",
+                    "type": "string",
+                    "example": "/var/cache/barnacle/hot/sha256/ab/abc123def456"
+                },
+                "mediaType": {
+                    "description": "MediaType is the OCI media type of the blob.",
+                    "type": "string",
+                    "example": "application/vnd.oci.image.layer.v1.tar+gzip"
+                },
+                "size": {
+                    "description": "Size is the size of the blob in bytes.",
+                    "type": "integer",
+                    "example": 1048576
+                },
+                "tier": {
+                    "description": "Tier is the cache tier number where this blob resides.",
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "blobsapi.ListBlobsResponse": {
+            "type": "object",
+            "properties": {
+                "blobs": {
+                    "description": "Blobs is a list of all cached blobs on this node.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/blobsapi.BlobResponse"
+                    }
+                }
+            }
+        },
+        "httptk.ErrorsList": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httptk.HTTPErrorDTO"
+                    }
+                }
+            }
+        },
+        "httptk.HTTPErrorDTO": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "BLOB_UNKNOWN"
+                },
+                "detail": {},
+                "message": {
+                    "type": "string",
+                    "example": "blob unknown to registry"
+                }
+            }
+        },
+        "nodesapi.DiskUsageResponse": {
+            "type": "object",
+            "properties": {
+                "freeBytes": {
+                    "description": "FreeBytes is the available space in bytes.",
+                    "type": "integer",
+                    "example": 53687091200
+                },
+                "path": {
+                    "description": "Path is the filesystem path for this cache tier.",
+                    "type": "string",
+                    "example": "/var/cache/barnacle/hot"
+                },
+                "totalBytes": {
+                    "description": "TotalBytes is the total size of the filesystem in bytes.",
+                    "type": "integer",
+                    "example": 107374182400
+                },
+                "usedBytes": {
+                    "description": "UsedBytes is the used space in bytes.",
+                    "type": "integer",
+                    "example": 53687091200
+                }
+            }
+        },
+        "nodesapi.ListNodesResponse": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "description": "Nodes is a list of all registered nodes.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nodesapi.NodeResponse"
+                    }
+                }
+            }
+        },
+        "nodesapi.NodeResponse": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "description": "Hostname is the system hostname of the node.",
+                    "type": "string",
+                    "example": "barnacle-1"
+                },
+                "lastUpdated": {
+                    "description": "LastUpdated is the timestamp when this information was last updated.",
+                    "type": "string"
+                },
+                "nodeId": {
+                    "description": "NodeID is the unique identifier for this node.",
+                    "type": "string",
+                    "example": "node-1"
+                },
+                "stats": {
+                    "description": "Stats contains high-level statistics about the node.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/nodesapi.StatsResponse"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Status indicates the current operational state of the node.",
+                    "type": "string",
+                    "example": "ready"
+                }
+            }
+        },
+        "nodesapi.StatsResponse": {
+            "type": "object",
+            "properties": {
+                "tierDiskUsage": {
+                    "description": "TierDiskUsage contains disk usage statistics for each cache tier.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nodesapi.DiskUsageResponse"
+                    }
+                }
+            }
+        },
+        "upstreamsapi.GetUpstreamResponse": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "description": "Alias is the unique name for this upstream registry.",
+                    "type": "string",
+                    "example": "dockerhub"
+                },
+                "authType": {
+                    "description": "AuthType is the type of authentication configured for this upstream.\nPossible values: \"anonymous\", \"basic\", \"bearer\".",
+                    "type": "string",
+                    "example": "anonymous"
+                },
+                "registry": {
+                    "description": "Registry is the URL or hostname of the upstream registry.",
+                    "type": "string",
+                    "example": "registry-1.docker.io"
+                }
+            }
+        },
+        "upstreamsapi.ListUpstreamsResponse": {
+            "type": "object",
+            "properties": {
+                "upstreams": {
+                    "description": "Upstreams is a list of configured upstream registry aliases.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dockerhub",
+                        "ghcr"
+                    ]
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "description": "Health and system status",
+            "name": "system"
+        },
+        {
+            "description": "Node lifecycle and health management",
+            "name": "nodes"
+        },
+        {
+            "description": "Upstream container registry configuration",
+            "name": "upstreams"
+        },
+        {
+            "description": "Blob cache inspection and management",
+            "name": "blobs"
+        }
+    ]
+}

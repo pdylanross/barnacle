@@ -24,7 +24,7 @@ Barnacle addresses these challenges through intelligent metadata-driven placemen
 - **Automatic Storage Tiering**: Cost optimization through hot/warm/cold/archive tiers based on access patterns
 - **Horizontal Scalability**: Add capacity by adding pods; no complex resharding required
 - **Multiple Upstream Registries**: Proxy to Docker Hub, GCR, ECR, Harbor, and private registries simultaneously
-- **Flexible Authentication**: Support for both credential passthrough and hardcoded upstream credentials
+- **Flexible Authentication**: Basic auth, bearer token, and anonymous authentication for upstream registries
 - **Thundering Herd Prevention**: Distributed locking ensures single upstream fetch per blob across the cluster
 - **Read-Only Safe**: Production-ready read-only mode with architecture supporting write operations
 
@@ -110,6 +110,22 @@ Metadata-based sharding (`digest → Redis lookup → pod(s)`) provides:
 - Multi-replica support with configurable redundancy
 
 **Placement Algorithm:**
+
+*Current placement (v0.1.0):*
+```
+For new blob:
+1. Query node capacities from Redis
+2. Iterate through storage tiers in order (hot → warm → cold)
+3. Prefer local node if it has sufficient space in current tier
+4. Fall back to first remote node with capacity in current tier
+5. Store metadata mapping digest → {node, tier}
+```
+
+The current algorithm prioritizes storage tiers in order, placing blobs on the fastest
+available tier with sufficient capacity. Local node preference reduces network hops
+for subsequent reads.
+
+*Planned placement (v0.4.0+):*
 ```
 For new blob:
 1. Query all pod capacities from Redis
@@ -157,12 +173,8 @@ Blobs stored content-addressed:
 ```
 /var/cache/oci/
   sha256/
-    ab/
-      cd/
-        ef/
-          abcdef123.../
-            data       # actual blob content
-            metadata   # size, timestamps, tier
+    abc123def456...                   # blob content
+    abc123def456....descriptor.json   # metadata
 ```
 
 Each storage tier (hot/warm/cold) is a separate filesystem mount with different backing storage.
@@ -219,34 +231,38 @@ Barnacle proxies to any number of upstream registries simultaneously:
 - Quay.io
 - Any OCI-compliant registry
 
-**Authentication modes:**
+**Configuration:**
 
-1. **Hardcoded Credentials** (registry → proxy)
-   ```yaml
-   upstreams:
-     - registry: "registry-1.docker.io"
-       username: "company-bot"
-       password: "secret123"
-     - registry: "gcr.io"
-       service_account_key: "/path/to/key.json"
-   ```
-   - Centralizes credential management
-   - Users don't need upstream credentials
-   - Simplifies compliance and auditing
-   - Recommended for production
+Upstreams are configured as a map where each key is an alias used in the URL path:
 
-2. **Credential Passthrough** (client → upstream via proxy)
-   ```yaml
-   upstreams:
-     - registry: "registry-1.docker.io"
-       passthrough_auth: true
-   ```
-   - Client provides credentials in pull request
-   - Proxy forwards to upstream
-   - Useful for user-specific private images
-   - Supports per-user quotas and permissions
+```yaml
+upstreams:
+  dockerhub:
+    registry: registry-1.docker.io
+    authentication:
+      basic:
+        username: "company-bot"
+        password: "secret123"
 
-Both modes can be used simultaneously for different registries.
+  gcr:
+    registry: gcr.io
+    authentication:
+      anonymous: {}
+
+  private-registry:
+    registry: registry.example.com
+    authentication:
+      bearer:
+        token: "my-token"
+```
+
+**Authentication types:**
+
+- **Basic auth**: Username and password credentials (`authentication.basic`)
+- **Bearer token**: Static bearer token (`authentication.bearer.token`)
+- **Anonymous**: No authentication required (`authentication.anonymous: {}`)
+
+The upstream alias (e.g., `dockerhub`) is used in request URLs: `/v2/dockerhub/library/nginx/manifests/latest`
 
 ### Distributed Locking
 
@@ -298,11 +314,11 @@ Effective capacity = 12.5TB
 
 ## Roadmap
 
-### Current Status: v0.0.0 (Alpha)
+### Current Status: v0.1.0 (Alpha) - Feature Complete
 
-📋 **Planned:**
+The v0.1.0 milestone is feature complete. The project remains in alpha status as we continue stabilization and testing.
 
-**v0.1.0 (Beta):**
+✅ **v0.1.0 (Feature Complete):**
 - Read-only proxy mode
 - Metadata-based sharding
 - Redis metadata store
@@ -312,18 +328,36 @@ Effective capacity = 12.5TB
 - Storage tiering architecture
 - Background tier migration
 
-**v0.2.0**
-- Credential passthrough
-- Comprehensive metrics
+**v0.2.0 - Authentication Rework**
+- Credential passthrough (forward client credentials to upstream)
+- GCR service account authentication
+- ECR IAM authentication
+- Pluggable auth provider interface
 - Helm chart
 
-**v0.3.0**
+**v0.3.0 - Monitoring & Observability**
+- Prometheus metrics
+- Grafana dashboards
+- Distributed tracing (OpenTelemetry)
+- Structured logging improvements
+- Health check enhancements
+
+**v0.4.0 - Image Optimization**
+- eStargz lazy-pulling support
+- eStargz rewriting for non-optimized images
+- Range request support (HTTP 206 Partial Content)
+- Accept header content negotiation
+- Full OCI Distribution Spec conformance
+
+**v0.5.0 - Operations & Beta Stabilization**
 - Write support (push to cache)
 - Garbage collection
 - Admin API
-- Grafana dashboards
+- Beta release milestone
 
-**v0.4.0:**
+**v0.6.0 - Advanced Placement**
+- Multi-factor placement scoring (capacity, load, blob count)
+- Configurable replication factor
 - Multi-cluster federation
 - Cross-region replication
 - Advanced placement policies (cost optimization)
@@ -389,6 +423,41 @@ Inspired by:
 
 ---
 
-**Project Status:** Alpha - Not recommended for production use yet. APIs may change.
+**Project Status:** Alpha (v0.1.0 feature complete) - Not recommended for production use yet. APIs may change. Beta planned for v0.5.0.
 
-**Questions?** Open an issue or join our [Discord](https://discord.gg/barnacle).
+**Questions?** Open an issue.
+
+---
+
+## TODO: OCI Distribution Spec Conformance
+
+The current distribution API implementation is **partially compliant** with the OCI Distribution Specification for read-only operations.
+
+### Compliant
+
+- HTTP Methods (GET/HEAD) - Correct
+- Error Response Format - OCI-compliant JSON structure with code, message, detail
+- Error Codes - All standard codes defined (BLOB_UNKNOWN, MANIFEST_UNKNOWN, etc.)
+- Status Codes - Correct (200, 400, 404)
+- Tag vs Digest Handling - Correctly uses `:` for tags, `@` for digests
+- Blob Streaming - Efficient io.ReadCloser streaming
+- Required Headers - Docker-Distribution-API-Version, Docker-Content-Digest, Content-Type, Content-Length
+
+### Intentional Deviation
+
+**Non-Standard URL Pattern:**
+```
+Current:  /v2/:upstream/:repository/manifests/:reference
+OCI Spec: /v2/<name>/manifests/<reference>
+```
+
+This is **by design** - Barnacle routes to multiple upstream registries, requiring the upstream parameter. Standard OCI clients (docker, containerd, skopeo) cannot use this API directly without configuration.
+
+### Missing Features (TODO)
+
+| Feature | Impact | Priority |
+|---------|--------|----------|
+| Accept header content negotiation | Can't negotiate manifest format (image vs list) | Medium |
+| Range request support (206 Partial Content) | Can't resume interrupted blob downloads | Low |
+| Accept-Ranges header on blob endpoints | Clients don't know ranges are unsupported | Low |
+| Content-Type header on HEAD blob | Minor, not strictly required by spec | Low |

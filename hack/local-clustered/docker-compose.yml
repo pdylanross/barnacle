@@ -1,0 +1,78 @@
+services:
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "5541:8001"
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - redis-net
+
+  barnacle-1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["serve", "--configDir", "/etc/barnacle"]
+    network_mode: host
+    environment:
+      - BARNACLE_NODE_ID=localhost:8081
+      - BARNACLE_SERVER_PORT=8081
+      - DEVELOPMENT=true
+    volumes:
+      - ./config:/etc/barnacle:ro
+    tmpfs:
+      - /var/cache/barnacle/hot:size=2G
+      - /var/cache/barnacle/cold:size=5G
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  barnacle-2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["serve", "--configDir", "/etc/barnacle"]
+    network_mode: host
+    environment:
+      - BARNACLE_NODE_ID=localhost:8082
+      - BARNACLE_SERVER_PORT=8082
+      - DEVELOPMENT=true
+    volumes:
+      - ./config:/etc/barnacle:ro
+    tmpfs:
+      - /var/cache/barnacle/hot:size=2G
+      - /var/cache/barnacle/cold:size=5G
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  barnacle-3:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["serve", "--configDir", "/etc/barnacle"]
+    network_mode: host
+    environment:
+      - BARNACLE_NODE_ID=localhost:8083
+      - BARNACLE_SERVER_PORT=8083
+      - DEVELOPMENT=true
+    volumes:
+      - ./config:/etc/barnacle:ro
+    tmpfs:
+      - /var/cache/barnacle/hot:size=2G
+      - /var/cache/barnacle/cold:size=5G
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+
+networks:
+  redis-net:

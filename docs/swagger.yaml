@@ -1,0 +1,345 @@
+basePath: /
+consumes:
+- application/json
+definitions:
+  blobsapi.BlobResponse:
+    properties:
+      accessCount5m:
+        description: AccessCount5m is the number of accesses in the last 5 minutes.
+        example: 42
+        type: integer
+      digest:
+        description: Digest is the content-addressable digest of the blob (e.g., "sha256:abc123...").
+        example: sha256:abc123def456...
+        type: string
+      diskPath:
+        description: DiskPath is the filesystem path where the blob is stored.
+        example: /var/cache/barnacle/hot/sha256/ab/abc123def456
+        type: string
+      mediaType:
+        description: MediaType is the OCI media type of the blob.
+        example: application/vnd.oci.image.layer.v1.tar+gzip
+        type: string
+      size:
+        description: Size is the size of the blob in bytes.
+        example: 1048576
+        type: integer
+      tier:
+        description: Tier is the cache tier number where this blob resides.
+        example: 0
+        type: integer
+    type: object
+  blobsapi.ListBlobsResponse:
+    properties:
+      blobs:
+        description: Blobs is a list of all cached blobs on this node.
+        items:
+          $ref: '#/definitions/blobsapi.BlobResponse'
+        type: array
+    type: object
+  httptk.ErrorsList:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/httptk.HTTPErrorDTO'
+        type: array
+    type: object
+  httptk.HTTPErrorDTO:
+    properties:
+      code:
+        example: BLOB_UNKNOWN
+        type: string
+      detail: {}
+      message:
+        example: blob unknown to registry
+        type: string
+    type: object
+  nodesapi.DiskUsageResponse:
+    properties:
+      freeBytes:
+        description: FreeBytes is the available space in bytes.
+        example: 53687091200
+        type: integer
+      path:
+        description: Path is the filesystem path for this cache tier.
+        example: /var/cache/barnacle/hot
+        type: string
+      totalBytes:
+        description: TotalBytes is the total size of the filesystem in bytes.
+        example: 107374182400
+        type: integer
+      usedBytes:
+        description: UsedBytes is the used space in bytes.
+        example: 53687091200
+        type: integer
+    type: object
+  nodesapi.ListNodesResponse:
+    properties:
+      nodes:
+        description: Nodes is a list of all registered nodes.
+        items:
+          $ref: '#/definitions/nodesapi.NodeResponse'
+        type: array
+    type: object
+  nodesapi.NodeResponse:
+    properties:
+      hostname:
+        description: Hostname is the system hostname of the node.
+        example: barnacle-1
+        type: string
+      lastUpdated:
+        description: LastUpdated is the timestamp when this information was last updated.
+        type: string
+      nodeId:
+        description: NodeID is the unique identifier for this node.
+        example: node-1
+        type: string
+      stats:
+        allOf:
+        - $ref: '#/definitions/nodesapi.StatsResponse'
+        description: Stats contains high-level statistics about the node.
+      status:
+        description: Status indicates the current operational state of the node.
+        example: ready
+        type: string
+    type: object
+  nodesapi.StatsResponse:
+    properties:
+      tierDiskUsage:
+        description: TierDiskUsage contains disk usage statistics for each cache tier.
+        items:
+          $ref: '#/definitions/nodesapi.DiskUsageResponse'
+        type: array
+    type: object
+  upstreamsapi.GetUpstreamResponse:
+    properties:
+      alias:
+        description: Alias is the unique name for this upstream registry.
+        example: dockerhub
+        type: string
+      authType:
+        description: |-
+          AuthType is the type of authentication configured for this upstream.
+          Possible values: "anonymous", "basic", "bearer".
+        example: anonymous
+        type: string
+      registry:
+        description: Registry is the URL or hostname of the upstream registry.
+        example: registry-1.docker.io
+        type: string
+    type: object
+  upstreamsapi.ListUpstreamsResponse:
+    properties:
+      upstreams:
+        description: Upstreams is a list of configured upstream registry aliases.
+        example:
+        - dockerhub
+        - ghcr
+        items:
+          type: string
+        type: array
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Barnacle Support
+    url: https://github.com/pdylanross/barnacle/issues
+  description: |-
+    Pull-through caching proxy for OCI container registries.
+
+    Barnacle provides a distributed caching layer in front of upstream
+    container registries, with multi-node coordination via Redis.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Barnacle API
+  version: "1.0"
+paths:
+  /api/v1/nodes:
+    get:
+      description: Returns a list of all registered nodes in the cluster
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodesapi.ListNodesResponse'
+      summary: List nodes
+      tags:
+      - nodes
+  /api/v1/nodes/{nodeId}:
+    get:
+      description: Returns information about a specific node
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodesapi.NodeResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Get node
+      tags:
+      - nodes
+  /api/v1/nodes/{nodeId}/blobs:
+    get:
+      description: Returns all blobs cached on the specified node
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/blobsapi.ListBlobsResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: List blobs
+      tags:
+      - blobs
+  /api/v1/nodes/{nodeId}/blobs/{digest}:
+    delete:
+      description: Deletes a specific blob from the node's cache
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      - description: Blob digest
+        in: path
+        name: digest
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Delete blob
+      tags:
+      - blobs
+    get:
+      description: Returns information about a specific blob on the node
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      - description: Blob digest
+        in: path
+        name: digest
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/blobsapi.BlobResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Get blob
+      tags:
+      - blobs
+  /api/v1/nodes/me:
+    get:
+      description: Returns information about this node
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodesapi.NodeResponse'
+      summary: Get current node
+      tags:
+      - nodes
+  /api/v1/upstreams:
+    get:
+      description: Returns a list of all configured upstream registry aliases
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/upstreamsapi.ListUpstreamsResponse'
+      summary: List upstreams
+      tags:
+      - upstreams
+  /api/v1/upstreams/{alias}:
+    get:
+      description: Returns details for a specific upstream registry
+      parameters:
+      - description: Upstream alias
+        in: path
+        name: alias
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/upstreamsapi.GetUpstreamResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Get upstream
+      tags:
+      - upstreams
+  /health:
+    get:
+      description: Returns the health status of the service
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Health status
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+produces:
+- application/json
+swagger: "2.0"
+tags:
+- description: Health and system status
+  name: system
+- description: Node lifecycle and health management
+  name: nodes
+- description: Upstream container registry configuration
+  name: upstreams
+- description: Blob cache inspection and management
+  name: blobs

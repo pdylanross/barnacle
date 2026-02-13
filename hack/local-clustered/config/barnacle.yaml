@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+redis:
+  addr: localhost:6379
+
+cache:
+  memory:
+    tagLimit: 10000
+    manifestMemoryLimitMi: 100
+    tagTTL: 5m
+  disk:
+    tiers:
+      - tier: 0
+        path: /var/cache/barnacle/hot
+      - tier: 1
+        path: /var/cache/barnacle/cold
+    descriptorLimit: 10000
+
+rebalance:
+  enabled: true
+
+upstreams:
+  dockerio:
+    registry: docker.io
+    authentication:
+      basic:
+        username: "pdylanross"
+        password: "dckr_pat_NheFk5zzox0qSjKD-zFFGHWzK60"
