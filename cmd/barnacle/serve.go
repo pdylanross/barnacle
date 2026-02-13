@@ -25,7 +25,11 @@ var serveCmd = &cobra.Command{
 		}
 		defer tk.IgnoreDeferError(logger.Sync)
 
-		logger.Info("Starting barnacle server")
+		logger.Info("Starting barnacle server",
+			zap.String("version", version),
+			zap.String("commit", commit),
+			zap.String("date", date),
+		)
 
 		// Load configuration
 		config, err := configloader.LoadConfig(configDir, logger)

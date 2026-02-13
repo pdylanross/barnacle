@@ -6,6 +6,13 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Build-time variables injected via ldflags by goreleaser.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 //go:generate swag init -g main.go --parseInternal -d ./cmd/barnacle/,./internal/routes/,./pkg/api/,./internal/tk/httptk/ -o docs
 
 // @title           Barnacle API

@@ -1,463 +1,165 @@
-# Barnacle
-
-A distributed, tiered OCI registry caching proxy designed for terabyte-scale container images.
-
-## Overview
-
-Barnacle is a Kubernetes-native caching proxy for OCI registries that solves the challenges of managing extremely large container images (multi-terabyte blobs) across distributed infrastructure. Like its namesake that attaches to larger vessels, Barnacle attaches to upstream registries and intelligently caches their content across a distributed fleet of storage pods.
-
-### Why Barnacle?
-
-Modern container workloads increasingly include massive images containing ML models, scientific datasets, and other large artifacts. Traditional registry caching solutions face several challenges:
-
-- **Fixed placement**: Consistent hashing locks blobs to specific nodes, preventing optimization
-- **Inefficient storage**: All blobs treated equally regardless of access patterns, wasting expensive fast storage
-- **Poor scalability**: Large blobs overwhelm memory-based caching systems
-- **Limited capacity**: Cannot efficiently handle terabyte-scale individual blobs
-
-Barnacle addresses these challenges through intelligent metadata-driven placement, automatic storage tiering, and streaming-first architecture.
-
-## Key Features
-
-- **Terabyte-Scale Blob Support**: Stream-based architecture handles blobs of any size without memory constraints
-- **Metadata-Driven Sharding**: Intelligent placement based on capacity, load, and access patterns rather than static hashing
-- **Automatic Storage Tiering**: Cost optimization through hot/warm/cold/archive tiers based on access patterns
-- **Horizontal Scalability**: Add capacity by adding pods; no complex resharding required
-- **Multiple Upstream Registries**: Proxy to Docker Hub, GCR, ECR, Harbor, and private registries simultaneously
-- **Flexible Authentication**: Basic auth, bearer token, and anonymous authentication for upstream registries
-- **Thundering Herd Prevention**: Distributed locking ensures single upstream fetch per blob across the cluster
-- **Read-Only Safe**: Production-ready read-only mode with architecture supporting write operations
-
-## Architecture
-
-### High-Level Design
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Client Requests                       │
-│              (docker pull, containerd)                   │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-         ┌───────────────────────┐
-         │  Load Balancer/       │
-         │  Ingress              │
-         └───────────┬───────────┘
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-┌───────────────┐         ┌───────────────┐
-│ Cache Pod 0   │  ◄────► │ Cache Pod N   │
-│ (Router)      │         │ (Router)      │
-└───────┬───────┘         └───────┬───────┘
-        │                         │
-        ▼                         ▼
-┌───────────────┐         ┌───────────────┐
-│ Storage Tier  │         │ Storage Tier  │
-│ (NVMe/SSD/    │         │ (NVMe/SSD/    │
-│  HDD/S3)      │         │  HDD/S3)      │
-└───────────────┘         └───────────────┘
-        │                         │
-        └────────────┬────────────┘
-                     ▼
-              ┌─────────────┐
-              │    Redis    │
-              │  (Metadata) │
-              └─────────────┘
-```
-
-### Core Components
-
-#### 1. Router Component
-Each cache pod runs a router that:
-- Determines blob ownership via metadata lookup (not hashing)
-- Issues 307 redirects to the appropriate storage pod
-- Handles cache misses by fetching from upstream
-- Manages distributed locks during fetch operations
-
-#### 2. Redis Metadata Store
-Redis serves as the source of truth for:
-- **Blob locations**: Maps digests to storage pods and tiers
-- **Node capacity**: Tracks available space, IOPS, and load per pod
-- **Distributed locks**: Prevents duplicate fetches (thundering herd protection)
-- **Access patterns**: Records access frequency for tier migration decisions
-- **Membership**: Tracks active pods for placement decisions
-
-**Why Redis over other options?**
-- Fast metadata lookups (critical path for all requests)
-- Built-in distributed locking with TTL (via Redlock/Redsync)
-- Sorted sets for efficient access pattern tracking
-- Pub/Sub for membership changes
-- AOF persistence provides durability without Raft overhead
-- Simple operations compared to etcd or Consul
-- Single dependency for both metadata and coordination
-
-#### 3. Metadata-Based Sharding
-
-**Why metadata-based instead of consistent hashing?**
-
-Consistent hashing (`digest → hash → pod`) is simple but inflexible:
-- Cannot move blobs after initial placement
-- No consideration of pod capacity or load
-- Wastes space (some pods fill while others sit empty)
-- Makes storage tiering impossible
-
-Metadata-based sharding (`digest → Redis lookup → pod(s)`) provides:
-- Dynamic placement based on current capacity
-- Load-aware distribution
-- Support for storage tiering (move blobs between storage classes)
-- Graceful rebalancing without rehashing
-- Multi-replica support with configurable redundancy
-
-**Placement Algorithm:**
-
-*Current placement (v0.1.0):*
-```
-For new blob:
-1. Query node capacities from Redis
-2. Iterate through storage tiers in order (hot → warm → cold)
-3. Prefer local node if it has sufficient space in current tier
-4. Fall back to first remote node with capacity in current tier
-5. Store metadata mapping digest → {node, tier}
-```
-
-The current algorithm prioritizes storage tiers in order, placing blobs on the fastest
-available tier with sufficient capacity. Local node preference reduces network hops
-for subsequent reads.
-
-*Planned placement (v0.4.0+):*
-```
-For new blob:
-1. Query all pod capacities from Redis
-2. Filter pods by available space
-3. Score by: available_space (50%) + load (30%) + blob_count (20%)
-4. Select N pods with best scores (N = replication factor)
-5. Store metadata mapping digest → [pod1, pod2, ...]
-```
-
-#### 4. Storage Tiering
-
-Blobs automatically migrate between storage tiers based on access patterns:
-
-| Tier    | Storage     | Cost/GB | Use Case                    | Demotion After |
-|---------|-------------|---------|----------------------------|----------------|
-| Hot     | NVMe SSD    | $0.50   | Recently accessed (10+ hits) | 24 hours       |
-| Warm    | SSD         | $0.15   | Moderate access (3+ hits)    | 7 days         |
-| Cold    | HDD         | $0.05   | Occasional access            | 30 days        |
-| Archive | S3 Glacier  | $0.004  | Rarely accessed              | 90+ days       |
-
-**Background workers continuously:**
-- Monitor access patterns
-- Promote frequently-accessed blobs to faster tiers
-- Demote cold blobs to cheaper storage
-- Optimize cost vs. performance automatically
-
-**Example cost savings for 100TB:**
-- All NVMe: $50,000/month
-- Tiered (10% hot, 20% warm, 40% cold, 30% archive): **$10,120/month** (80% reduction)
-
-#### 5. Storage Backend
-
-**Filesystem-based, not key-value stores**
-
-**Why filesystem instead of BadgerDB/Pebble/etc?**
-- No size limits (TB+ blobs)
-- Native streaming via `io.Reader`/`io.Writer`
-- OS page cache provides automatic hot-data caching
-- Standard tools work (`du`, `find`, `rsync`)
-- Simple debugging and operations
-- Perfect range request support
-- Works identically across all storage tiers
-
-Blobs stored content-addressed:
-```
-/var/cache/oci/
-  sha256/
-    abc123def456...                   # blob content
-    abc123def456....descriptor.json   # metadata
-```
-
-Each storage tier (hot/warm/cold) is a separate filesystem mount with different backing storage.
-
-### Request Flow
-
-#### Cache Hit (Blob Exists)
-```
-1. Client → Load Balancer → Any Cache Pod
-2. Pod queries Redis: "Where is sha256:abc...?"
-3. Redis returns: [pod-2 (hot tier), pod-5 (warm tier)]
-4. Pod issues 307 redirect to pod-2
-5. Client fetches directly from pod-2
-6. Pod-2 streams from local NVMe
-7. Access recorded in Redis (async)
-```
-
-#### Cache Miss (Fetch from Upstream)
-```
-1. Client → Cache Pod → Redis lookup → Not found
-2. Pod acquires distributed lock in Redis for digest
-3. Lock acquired → fetch from upstream begins
-4. Redis metadata queried for optimal placement
-5. Selected pods: [pod-7 (hot), pod-3 (hot)] based on capacity
-6. Blob streams from upstream → client (via pod)
-7. Simultaneously streams to pod-7 and pod-3 storage
-8. Metadata written to Redis on completion
-9. Lock released
-10. Future requests redirect to pod-7 or pod-3
-```
-
-#### Thundering Herd Prevention
-```
-1. Pod A: Acquires lock for sha256:abc... → SUCCESS
-2. Pod B: Attempts lock for sha256:abc... → FAIL
-3. Pod B: Returns 503 Retry-After: 5
-4. Client waits 5 seconds, retries
-5. Blob now cached, Pod B redirects to owner
-```
-
-The lock uses heartbeat extension: acquired with 30s TTL, extended every 10s while download progresses. If the downloading pod crashes, lock expires automatically.
-
-### Multiple Upstream Registries
-
-Barnacle proxies to any number of upstream registries simultaneously:
-
-**Supported upstreams:**
-- Docker Hub (`registry-1.docker.io`)
-- Google Container Registry (`gcr.io`, `us.gcr.io`, etc.)
-- AWS Elastic Container Registry (ECR)
-- Azure Container Registry (ACR)
-- GitHub Container Registry (`ghcr.io`)
-- Harbor
-- Quay.io
-- Any OCI-compliant registry
-
-**Configuration:**
-
-Upstreams are configured as a map where each key is an alias used in the URL path:
-
-```yaml
-upstreams:
-  dockerhub:
-    registry: registry-1.docker.io
-    authentication:
-      basic:
-        username: "company-bot"
-        password: "secret123"
-
-  gcr:
-    registry: gcr.io
-    authentication:
-      anonymous: {}
-
-  private-registry:
-    registry: registry.example.com
-    authentication:
-      bearer:
-        token: "my-token"
-```
-
-**Authentication types:**
-
-- **Basic auth**: Username and password credentials (`authentication.basic`)
-- **Bearer token**: Static bearer token (`authentication.bearer.token`)
-- **Anonymous**: No authentication required (`authentication.anonymous: {}`)
-
-The upstream alias (e.g., `dockerhub`) is used in request URLs: `/v2/dockerhub/library/nginx/manifests/latest`
-
-### Distributed Locking
-
-Redis-based distributed locking prevents multiple pods from fetching the same blob:
-
-**Lock characteristics:**
-- 30-second TTL with 10-second heartbeat extension
-- Progress tracking: only extends if bytes are flowing
-- Automatic expiration if holder crashes
-- Waiters poll and retry with exponential backoff
-
-**Lock lifecycle:**
-```go
-1. Acquire lock with 30s TTL
-2. Start download
-3. Heartbeat goroutine extends every 10s
-4. Track progress (bytes read)
-5. Only extend if making progress
-6. On completion or error: release lock
-7. If crash: lock expires in 30s
-```
-
-Stalled downloads (network issue, upstream timeout) automatically release locks when progress stops, allowing other pods to retry.
-
-### Scalability
-
-**Horizontal scaling:**
-- Add pods → increase capacity and throughput
-- New pods register in Redis membership
-- Placement algorithm automatically uses new capacity
-- No rebalancing required (optional background optimization)
-
-**Storage capacity scaling:**
-```
-3 pods × 5TB PVCs = 15TB total
-Replication factor = 2
-Effective capacity = 7.5TB
-
-Add 2 pods (5 total):
-5 pods × 5TB = 25TB total
-Effective capacity = 12.5TB
-```
-
-**Performance characteristics:**
-- Most requests: Single redirect (307) → direct to owner
-- Cache miss: Single fetch → distributed write → cached
-- Lock contention: Only during cache misses for same digest
-- Metadata lookups: Redis (sub-millisecond)
-
-## Roadmap
-
-### Current Status: v0.1.0 (Alpha) - Feature Complete
-
-The v0.1.0 milestone is feature complete. The project remains in alpha status as we continue stabilization and testing.
-
-✅ **v0.1.0 (Feature Complete):**
-- Read-only proxy mode
-- Metadata-based sharding
-- Redis metadata store
-- Distributed locking
-- Multiple upstream support
-- Hardcoded credentials
-- Storage tiering architecture
-- Background tier migration
-
-**v0.2.0 - Authentication Rework**
-- Credential passthrough (forward client credentials to upstream)
-- GCR service account authentication
-- ECR IAM authentication
-- Pluggable auth provider interface
-- Helm chart
-
-**v0.3.0 - Monitoring & Observability**
-- Prometheus metrics
-- Grafana dashboards
-- Distributed tracing (OpenTelemetry)
-- Structured logging improvements
-- Health check enhancements
-
-**v0.4.0 - Image Optimization**
-- eStargz lazy-pulling support
-- eStargz rewriting for non-optimized images
-- Range request support (HTTP 206 Partial Content)
-- Accept header content negotiation
-- Full OCI Distribution Spec conformance
-
-**v0.5.0 - Operations & Beta Stabilization**
-- Write support (push to cache)
-- Garbage collection
-- Admin API
-- Beta release milestone
-
-**v0.6.0 - Advanced Placement**
-- Multi-factor placement scoring (capacity, load, blob count)
-- Configurable replication factor
-- Multi-cluster federation
-- Cross-region replication
-- Advanced placement policies (cost optimization)
-- Webhook for external placement decisions
-
-**v1.0.0:**
-- Production hardening
-- Performance optimization
-- Comprehensive documentation
-- Reference architectures
-
-## Design Philosophy
-
-### Why These Choices?
-
-**Metadata-driven over consistent hashing:**
-- Flexibility > Simplicity
-- Enables tiering, rebalancing, and capacity-aware placement
-- Slight complexity increase worth the operational benefits
-
-**Redis over etcd/Consul:**
-- Performance: Faster for hot-path lookups
-- Simplicity: Single dependency for metadata + locking
-- Familiarity: Most teams already run Redis
-
-**Filesystem over key-value stores:**
-- No size limits for TB-scale blobs
-- Streaming without memory pressure
-- Operational simplicity (standard tools work)
-
-**Tiering over uniform storage:**
-- 80% cost savings in practice
-- Performance where it matters (hot tier)
-- Automatic optimization reduces ops burden
-
-**Read-only first:**
-- Safer for production introduction
-- Most use cases are pull-heavy
-- Architecture supports writes when ready
-
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-**Areas we'd love help:**
-- Performance testing at scale
-- Additional upstream registry integrations
-- Metrics and dashboards
-- Documentation improvements
-- Bug reports and feature requests
-
-## License
-
-Apache License 2.0 - See [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-Inspired by:
-- [Docker Distribution](https://github.com/distribution/distribution) - Registry implementation
-- [Groupcache](https://github.com/golang/groupcache) - Distributed caching concepts
-- [Harbor](https://goharbor.io/) - Enterprise registry features
-- The barnacle - Nature's original attachment-based caching system
+<p align="center">
+  <img alt="GoReleaser Logo" src="https://avatars2.githubusercontent.com/u/24697112?v=3&s=200" height="200" />
+  <h3 align="center">GoReleaser</h3>
+  <p align="center">Release engineering, simplified.</p>
+  <p align="center">
+    <img alt="Go" src="./www/docs/static/go-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Go" src="./www/docs/static/go-dark.svg#gh-dark-mode-only" height="30" width="30" />
+    <img alt="Rust" src="./www/docs/static/rust-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Rust" src="./www/docs/static/rust-dark.svg#gh-dark-mode-only" height="30" width="30" />
+    <img alt="Zig" src="./www/docs/static/zig-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Zig" src="./www/docs/static/zig-dark.svg#gh-dark-mode-only" height="30" width="30" />
+    <img alt="Bun" src="./www/docs/static/bun-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Bun" src="./www/docs/static/bun-dark.svg#gh-dark-mode-only" height="30" width="30" />
+    <img alt="Deno" src="./www/docs/static/deno-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Deno" src="./www/docs/static/deno-dark.svg#gh-dark-mode-only" height="30" width="30" />
+    <img alt="Python" src="./www/docs/static/python-light.svg#gh-light-mode-only" height="30" width="30" />
+    <img alt="Python" src="./www/docs/static/python-dark.svg#gh-dark-mode-only" height="30" width="30" />
+  </p>
+</p>
 
 ---
 
-**Project Status:** Alpha (v0.1.0 feature complete) - Not recommended for production use yet. APIs may change. Beta planned for v0.5.0.
+We handle the complexities of releasing so you can focus in building what really
+matters: **your software**.
 
-**Questions?** Open an issue.
+![](https://goreleaser.com/static/goreleaser.png)
 
 ---
 
-## TODO: OCI Distribution Spec Conformance
+## Get GoReleaser
 
-The current distribution API implementation is **partially compliant** with the OCI Distribution Specification for read-only operations.
+- [On your machine](https://goreleaser.com/install/);
+- [On CI/CD systems](https://goreleaser.com/ci/).
 
-### Compliant
+## Documentation
 
-- HTTP Methods (GET/HEAD) - Correct
-- Error Response Format - OCI-compliant JSON structure with code, message, detail
-- Error Codes - All standard codes defined (BLOB_UNKNOWN, MANIFEST_UNKNOWN, etc.)
-- Status Codes - Correct (200, 400, 404)
-- Tag vs Digest Handling - Correctly uses `:` for tags, `@` for digests
-- Blob Streaming - Efficient io.ReadCloser streaming
-- Required Headers - Docker-Distribution-API-Version, Docker-Content-Digest, Content-Type, Content-Length
+Documentation is hosted live at https://goreleaser.com
 
-### Intentional Deviation
+## Community
 
-**Non-Standard URL Pattern:**
-```
-Current:  /v2/:upstream/:repository/manifests/:reference
-OCI Spec: /v2/<name>/manifests/<reference>
-```
+You have questions, need support and or just want to talk about GoReleaser?
 
-This is **by design** - Barnacle routes to multiple upstream registries, requiring the upstream parameter. Standard OCI clients (docker, containerd, skopeo) cannot use this API directly without configuration.
+Here are ways to get in touch with the GoReleaser community:
 
-### Missing Features (TODO)
+[![Join Discord](https://img.shields.io/badge/Join_our_Discord_server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RGEBtg8vQ6)
+[![Follow Twitter](https://img.shields.io/badge/follow_on_twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://twitter.com/goreleaser)
+[![GitHub Discussions](https://img.shields.io/badge/GITHUB_DISCUSSION-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/goreleaser/goreleaser/discussions)
 
-| Feature | Impact | Priority |
-|---------|--------|----------|
-| Accept header content negotiation | Can't negotiate manifest format (image vs list) | Medium |
-| Range request support (206 Partial Content) | Can't resume interrupted blob downloads | Low |
-| Accept-Ranges header on blob endpoints | Clients don't know ranges are unsupported | Low |
-| Content-Type header on HEAD blob | Minor, not strictly required by spec | Low |
+You can find the links above and all others [here](https://goreleaser.com/links/).
+
+### Code of Conduct
+
+This project adheres to the Contributor Covenant [code of conduct](https://github.com/goreleaser/.github/blob/main/CODE_OF_CONDUCT.md).
+By participating, you are expected to uphold this code.
+We appreciate your contribution.
+Please refer to our [contributing guidelines](CONTRIBUTING.md) for further information.
+
+## Badges
+
+[![Release](https://img.shields.io/github/release/goreleaser/goreleaser.svg?style=for-the-badge)](https://github.com/goreleaser/goreleaser/releases/latest)
+[![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=for-the-badge)](/LICENSE.md)
+[![Build status](https://img.shields.io/github/actions/workflow/status/goreleaser/goreleaser/build.yml?style=for-the-badge&branch=main)](https://github.com/goreleaser/goreleaser/actions?workflow=build)
+[![Codecov branch](https://img.shields.io/codecov/c/github/goreleaser/goreleaser/main.svg?style=for-the-badge)](https://codecov.io/gh/goreleaser/goreleaser)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/goreleaser&style=for-the-badge)](https://artifacthub.io/packages/search?repo=goreleaser)
+[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg?style=for-the-badge)](http://godoc.org/github.com/goreleaser/goreleaser)
+[![Powered By: GoReleaser](https://img.shields.io/badge/powered%20by-goreleaser-green.svg?style=for-the-badge)](https://github.com/goreleaser)
+[![Backers on Open Collective](https://opencollective.com/goreleaser/backers/badge.svg?style=for-the-badge)](https://opencollective.com/goreleaser/backers/)
+[![Sponsors on Open Collective](https://opencollective.com/goreleaser/sponsors/badge.svg?style=for-the-badge)](https://opencollective.com/goreleaser/sponsors/)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg?style=for-the-badge)](https://conventionalcommits.org)
+[![CII Best Practices](https://img.shields.io/cii/summary/5420?label=openssf%20best%20practices&style=for-the-badge)](https://bestpractices.coreinfrastructure.org/projects/5420)
+[![GoReportCard](https://goreportcard.com/badge/github.com/goreleaser/goreleaser?style=for-the-badge)](https://goreportcard.com/report/github.com/goreleaser/goreleaser)
+
+## Sponsors
+
+Does you or your company use GoReleaser?
+
+You can help keep the project bug-free and feature rich by sponsoring the
+project and its maintainers.
+
+You can sponsor GoReleaser via:
+
+- **[GitHub Sponsors](https://github.com/sponsors/caarlos0)**
+- **[OpenCollective](https://opencollective.com/goreleaser)**
+
+A big **thank you** to all current, past, and future sponsors!
+
+<!-- sponsors:begin -->
+<!-- This list is auto-generated by scripts/update-sponsors.py -->
+
+### Gold Sponsors
+
+<div align="center">
+
+  <a href="https://github.com/mercedes-benz" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/34240465?v=4" alt="Mercedes-Benz Group" width="96" height="96" style="border-radius: 8px; margin: 8px;"></a>
+  <a href="https://github.com/nitrictech" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/72055470?v=4" alt="nitric" width="96" height="96" style="border-radius: 8px; margin: 8px;"></a>
+
+</div>
+
+### Silver Sponsors
+
+<div align="center">
+
+  <a href="https://github.com/DataDog" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/365230?v=4" alt="Datadog, Inc." width="80" height="80" style="border-radius: 8px; margin: 8px;"></a>
+
+</div>
+
+### Bronze Sponsors
+
+<div align="center">
+
+  <a href="https://github.com/leaanthony" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/1943904?v=4" alt="Lea Anthony" width="64" height="64" style="border-radius: 8px; margin: 8px;"></a>
+  <a href="https://github.com/conetcloud" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/35725664?v=4" alt="conet cloud" width="64" height="64" style="border-radius: 8px; margin: 8px;"></a>
+  <a href="https://github.com/encoredev" target="_blank" rel="noopener sponsored"><img src="https://avatars.githubusercontent.com/u/50438175?v=4" alt="Encore" width="64" height="64" style="border-radius: 8px; margin: 8px;"></a>
+  <a href="https://www.numary.com" target="_blank" rel="noopener sponsored"><img src="https://images.opencollective.com/numary/c4ef831/logo/96.png" alt="Numary" width="64" height="64" style="border-radius: 8px; margin: 8px;"></a>
+  <a href="https://about.gitea.com/" target="_blank" rel="noopener sponsored"><img src="https://images.opencollective.com/gitea/bf35c2f/logo/96.png" alt="Gitea" width="64" height="64" style="border-radius: 8px; margin: 8px;"></a>
+
+</div>
+
+### Backers
+
+- [Marcel Eichner](https://github.com/Ephigenia)
+- [Chatpong Voranartaksorn](https://github.com/psychvc)
+- [Bruno Paz](https://brunopaz.dev/)
+- [Guest](https://opencollective.com/guest-341ba997)
+- [Automatio AI](https://automatio.ai/)
+- [Bileta Avioni](https://biletaavioni.al/)
+- [Jared Allard](https://github.com/jaredallard)
+- [joe miller](https://github.com/joemiller)
+- [Ryan Nixon](https://github.com/taiidani)
+- [Lawrence Gripper](https://github.com/lawrencegripper)
+- [Francis Lavoie](https://github.com/francislavoie)
+- [Nicolas Gotchac](https://github.com/ngotchac)
+- [Ben](https://github.com/iwpnd)
+- [KEINOS](https://github.com/KEINOS)
+- [Eden Zimbelman](https://github.com/zimeg)
+- [Ben Lechlitner](https://github.com/asphaltbuffet)
+- [Santosh Yadav](https://github.com/santoshyadavdev)
+- [Alexey Palazhchenko](https://github.com/AlekSi)
+- [David Birks](https://github.com/dbirks)
+- [Alex Viscreanu](https://github.com/aexvir)
+- [Ethan Li](https://github.com/ethanjli)
+- [Benjamin Kane](https://github.com/bbkane)
+- [Carl Tsai](https://github.com/moonape1226)
+- [David Dymko](https://github.com/ddymko)
+- [Jan De Dobbeleer](https://github.com/JanDeDobbeleer)
+- [Paul Greenberg](https://github.com/greenpau)
+- [Baptiste Canton](https://github.com/batmac)
+- [Andrew](https://github.com/wobondar)
+- [Sidartha Karna](https://github.com/sidarthakarna)
+- [Kazuma Watanabe](https://github.com/wata727)
+- [Joseph Sirianni](https://github.com/jsirianni)
+- [Oleg Balunenko](https://github.com/obalunenko)
+- [^.{5}\s.{2}ram.{3}$](https://github.com/umatare5)
+- [Ethan Troy](https://github.com/ethanolivertroy)
+
+<!-- sponsors:end -->
+
+### Contributors
+
+This project exists thanks to all the people who contribute.
+[Contribution guide](CONTRIBUTING.md).
+
+## Stars
+
+[![Stargazers over time](https://starchart.cc/goreleaser/goreleaser.svg?variant=adaptive)](https://starchart.cc/goreleaser/goreleaser)

@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+version: 2
+
+project_name: barnacle
+
+builds:
+  - id: barnacle
+    main: ./cmd/barnacle
+    binary: barnacle
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+kos:
+  - id: barnacle
+    main: ./cmd/barnacle
+    base_image: gcr.io/distroless/static-debian12:nonroot
+    repositories:
+      - ghcr.io/pdylanross/barnacle
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{.Tag}}"
+      - "{{.Major}}.{{.Minor}}"
+      - "{{.Major}}"
+      - latest
+    labels:
+      org.opencontainers.image.title: barnacle
+      org.opencontainers.image.description: Distributed tiered OCI registry caching proxy
+      org.opencontainers.image.source: https://github.com/pdylanross/barnacle
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.revision: "{{.Commit}}"
+      org.opencontainers.image.licenses: Apache-2.0
+    creation_time: "{{.CommitTimestamp}}"
+    ko_data_creation_time: "{{.CommitTimestamp}}"
+    sbom: none
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: pdylanross
+    name: barnacle
+  draft: false
+  prerelease: auto
+  name_template: "{{ .Tag }}"
