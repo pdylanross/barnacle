@@ -46,16 +46,23 @@ type Config struct {
 	Insecure bool
 }
 
+const (
+	defaultNumVariants    = 100
+	defaultMaxLayers      = 4
+	defaultSharingPercent = 50
+	defaultConcurrency    = 4
+)
+
 // DefaultConfig returns a default configuration.
 func DefaultConfig() Config {
 	return Config{
 		BaseImage:           "alpine:latest",
 		TargetRegistry:      "localhost:5000",
-		NumVariants:         100,
+		NumVariants:         defaultNumVariants,
 		MinLayers:           1,
-		MaxLayers:           4,
-		LayerSharingPercent: 50,
-		Concurrency:         4,
+		MaxLayers:           defaultMaxLayers,
+		LayerSharingPercent: defaultSharingPercent,
+		Concurrency:         defaultConcurrency,
 		Insecure:            true,
 	}
 }
@@ -139,19 +146,17 @@ func (g *Generator) Generate() (*ImageManifest, error) {
 
 	// Start workers
 	var wg sync.WaitGroup
-	for i := 0; i < g.config.Concurrency; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
+	for range g.config.Concurrency {
+		wg.Go(func() {
 			for idx := range workChan {
-				err := g.generateImage(idx, baseImg)
-				resultChan <- err
+				genErr := g.generateImage(idx, baseImg)
+				resultChan <- genErr
 			}
-		}(i)
+		})
 	}
 
 	// Queue work
-	for i := 0; i < g.config.NumVariants; i++ {
+	for i := range g.config.NumVariants {
 		workChan <- i
 	}
 	close(workChan)
@@ -207,25 +212,11 @@ func (g *Generator) generateImage(idx int, baseImg v1.Image) error {
 	img := baseImg
 
 	if idx > 0 && g.shouldShareLayers() {
-		parentEntry := g.getRandomPreviousImage()
-		if parentEntry != nil {
-			parentRef = parentEntry.Reference
-			ref, err := name.ParseReference(parentRef)
-			if err == nil {
-				opts := g.remoteOptions()
-				if parentImg, err := remote.Image(ref, opts...); err == nil {
-					img = parentImg
-					g.logger.Debug("Using parent image",
-						zap.String("parent", parentRef),
-						zap.String("child", imageName),
-					)
-				}
-			}
-		}
+		img, parentRef = g.tryUseParentImage(img)
 	}
 
 	// Determine number of layers to add
-	numLayers := g.randomInt(g.config.MinLayers, g.config.MaxLayers)
+	numLayers := g.randomIntRange(g.config.MinLayers, g.config.MaxLayers)
 
 	// Generate random layers
 	var layerSizes []int64
@@ -233,7 +224,7 @@ func (g *Generator) generateImage(idx int, baseImg v1.Image) error {
 
 	currentImg := img
 
-	for i := 0; i < numLayers; i++ {
+	for i := range numLayers {
 		size := WeightedRandomSize()
 		layerSizes = append(layerSizes, size)
 		totalSize += size
@@ -260,8 +251,8 @@ func (g *Generator) generateImage(idx int, baseImg v1.Image) error {
 
 	opts := g.remoteOptions()
 
-	if err := remote.Write(targetRef, currentImg, opts...); err != nil {
-		return fmt.Errorf("failed to push image: %w", err)
+	if writeErr := remote.Write(targetRef, currentImg, opts...); writeErr != nil {
+		return fmt.Errorf("failed to push image: %w", writeErr)
 	}
 
 	// Get digest
@@ -295,12 +286,36 @@ func (g *Generator) generateImage(idx int, baseImg v1.Image) error {
 	return nil
 }
 
+func (g *Generator) tryUseParentImage(fallback v1.Image) (v1.Image, string) {
+	parentEntry := g.getRandomPreviousImage()
+	if parentEntry == nil {
+		return fallback, ""
+	}
+
+	ref, err := name.ParseReference(parentEntry.Reference)
+	if err != nil {
+		return fallback, ""
+	}
+
+	opts := g.remoteOptions()
+	parentImg, err := remote.Image(ref, opts...)
+	if err != nil {
+		return fallback, ""
+	}
+
+	g.logger.Debug("Using parent image",
+		zap.String("parent", parentEntry.Reference),
+	)
+
+	return parentImg, parentEntry.Reference
+}
+
 func (g *Generator) remoteOptions() []remote.Option {
 	opts := []remote.Option{remote.WithAuthFromKeychain(authn.DefaultKeychain)}
 	if g.config.Insecure {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, //nolint:gosec
+				InsecureSkipVerify: true, //nolint:gosec // e2e test tool pushes to local insecure registries
 			},
 		}
 		opts = append(opts, remote.WithTransport(transport))
@@ -308,15 +323,17 @@ func (g *Generator) remoteOptions() []remote.Option {
 	return opts
 }
 
-func (g *Generator) shouldShareLayers() bool {
-	// Generate random byte
-	randByte := make([]byte, 1)
-	rand.Read(randByte) //nolint:errcheck
+const percentThreshold = 256
 
-	// Convert to percentage (0-100)
-	pct := int(randByte[0]) * 100 / 256
+func (g *Generator) shouldShareLayers() bool {
+	randByte := make([]byte, 1)
+	_, _ = rand.Read(randByte)
+
+	pct := int(randByte[0]) * percentMultiplier / percentThreshold
 	return pct < g.config.LayerSharingPercent
 }
+
+const percentMultiplier = 100
 
 func (g *Generator) getRandomPreviousImage() *ImageEntry {
 	g.mu.Lock()
@@ -326,29 +343,43 @@ func (g *Generator) getRandomPreviousImage() *ImageEntry {
 		return nil
 	}
 
-	// Get random index
-	randBytes := make([]byte, 4)
-	rand.Read(randBytes) //nolint:errcheck
+	randBytes := make([]byte, randBytes4)
+	_, _ = rand.Read(randBytes)
 	idx := int(randBytes[0]) % len(g.generated)
 
 	return &g.generated[idx]
 }
 
-func (g *Generator) randomInt(min, max int) int {
-	if min >= max {
-		return min
+const (
+	randBytes4 = 4
+	bitShift8  = 8
+	bitShift16 = 16
+	bitShift24 = 24
+)
+
+func (g *Generator) randomIntRange(lo, hi int) int {
+	if lo >= hi {
+		return lo
 	}
 
-	randBytes := make([]byte, 4)
-	rand.Read(randBytes) //nolint:errcheck
+	randBytes := make([]byte, randBytes4)
+	_, _ = rand.Read(randBytes)
 
-	rangeSize := max - min + 1
-	val := int(randBytes[0]) | int(randBytes[1])<<8 | int(randBytes[2])<<16 | int(randBytes[3])<<24
+	rangeSize := hi - lo + 1
+	val := int(
+		randBytes[0],
+	) | int(
+		randBytes[1],
+	)<<bitShift8 | int(
+		randBytes[2],
+	)<<bitShift16 | int(
+		randBytes[3],
+	)<<bitShift24
 	if val < 0 {
 		val = -val
 	}
 
-	return min + (val % rangeSize)
+	return lo + (val % rangeSize)
 }
 
 func (g *Generator) buildManifest(startTime time.Time) *ImageManifest {
@@ -391,6 +422,8 @@ func (g *Generator) buildManifest(startTime time.Time) *ImageManifest {
 	}
 }
 
+const filePermissions = 0644
+
 // WriteManifest writes the manifest to a file.
 func (m *ImageManifest) WriteManifest(path string) error {
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -398,8 +431,8 @@ func (m *ImageManifest) WriteManifest(path string) error {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write manifest: %w", err)
+	if writeErr := os.WriteFile(path, data, filePermissions); writeErr != nil {
+		return fmt.Errorf("failed to write manifest: %w", writeErr)
 	}
 
 	return nil
@@ -413,8 +446,8 @@ func LoadManifest(path string) (*ImageManifest, error) {
 	}
 
 	var manifest ImageManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &manifest); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", unmarshalErr)
 	}
 
 	return &manifest, nil

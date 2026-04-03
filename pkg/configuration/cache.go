@@ -71,7 +71,11 @@ func (t *DiskTierConfiguration) GetSizeLimitBytes() (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid sizeLimit %q: %w", t.SizeLimit, err)
 	}
-	return uint64(q.Value()), nil
+	v := q.Value()
+	if v < 0 {
+		return 0, fmt.Errorf("sizeLimit %q must not be negative", t.SizeLimit)
+	}
+	return uint64(v), nil
 }
 
 // Validate checks that the disk tier configuration is valid.
@@ -90,7 +94,7 @@ func (t *DiskTierConfiguration) Validate() error {
 	}
 	if t.SizeLimit != "" {
 		if _, err := t.GetSizeLimitBytes(); err != nil {
-			return fmt.Errorf("%w: disk tier %d: %v",
+			return fmt.Errorf("%w: disk tier %d: %w",
 				ErrInvalidConfiguration, t.Tier, err)
 		}
 	}

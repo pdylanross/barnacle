@@ -62,12 +62,20 @@ type Options struct {
 	BarnacleNodeAddress string
 }
 
+const (
+	defaultWorkers    = 10
+	defaultIterations = 10000
+	defaultTimeout    = 5 * time.Minute
+	defaultKubeQPS    = float32(20000)
+	defaultKubeBurst  = 40000
+)
+
 // DefaultOptions returns the default options for e2e tests.
 func DefaultOptions() Options {
 	return Options{
-		Workers:             10,
-		Iterations:          10000,
-		Timeout:             5 * time.Minute,
+		Workers:             defaultWorkers,
+		Iterations:          defaultIterations,
+		Timeout:             defaultTimeout,
 		KubeContext:         "barnacle-e2e",
 		Namespace:           "barnacle-e2e",
 		BarnacleService:     "barnacle",
@@ -75,8 +83,8 @@ func DefaultOptions() Options {
 		ResultsPath:         "",
 		PodImage:            "busybox:latest",
 		UpstreamName:        "local",
-		KubeQPS:             20000,
-		KubeBurst:           40000,
+		KubeQPS:             defaultKubeQPS,
+		KubeBurst:           defaultKubeBurst,
 		DeletePods:          true,
 		Verbose:             false,
 		BarnacleIngressHost: "barnacle.test",

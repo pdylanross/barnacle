@@ -109,7 +109,10 @@ func (w *PodEventWatcher) WatchPullTime(ctx context.Context, podName string) (Pu
 }
 
 // FetchPodEvents lists all events for a pod and returns a structured PodEventRecord.
-func (w *PodEventWatcher) FetchPodEvents(ctx context.Context, podName, containerImage, failureReason string) (*PodEventRecord, error) {
+func (w *PodEventWatcher) FetchPodEvents(
+	ctx context.Context,
+	podName, containerImage, failureReason string,
+) (*PodEventRecord, error) {
 	selector := fields.AndSelectors(
 		fields.OneTermEqualSelector("involvedObject.name", podName),
 		fields.OneTermEqualSelector("involvedObject.kind", "Pod"),

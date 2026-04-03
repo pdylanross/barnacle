@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ func main() {
 		verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 	)
 
-	flag.Usage = func() {
+	flag.Usage = func() { //nolint:reassign // customizing CLI usage output
 		fmt.Fprintf(os.Stderr, "e2e-imagegen - Generate variant container images for e2e testing\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: e2e-imagegen [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
@@ -54,7 +55,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync() //nolint:errcheck
+	defer logger.Sync() //nolint:errcheck // best-effort sync on exit
 
 	// Build configuration
 	config := imagegen.Config{
@@ -69,8 +70,8 @@ func main() {
 	}
 
 	// Validate configuration
-	if err := validateConfig(config); err != nil {
-		logger.Fatal("Invalid configuration", zap.Error(err))
+	if validateErr := validateConfig(config); validateErr != nil {
+		logger.Fatal("Invalid configuration", zap.Error(validateErr))
 	}
 
 	logger.Info("Starting image generation",
@@ -91,8 +92,8 @@ func main() {
 	}
 
 	// Write manifest
-	if err := manifest.WriteManifest(*output); err != nil {
-		logger.Fatal("Failed to write manifest", zap.Error(err))
+	if writeErr := manifest.WriteManifest(*output); writeErr != nil {
+		logger.Fatal("Failed to write manifest", zap.Error(writeErr))
 	}
 
 	logger.Info("Image generation complete",
@@ -103,56 +104,56 @@ func main() {
 	)
 
 	// Print summary
-	fmt.Println()
-	fmt.Println("=== Generation Summary ===")
-	fmt.Printf("Total images:        %d\n", manifest.Statistics.TotalImages)
-	fmt.Printf("Total size:          %s\n", formatBytes(manifest.Statistics.TotalSize))
-	fmt.Printf("Average image size:  %s\n", formatBytes(manifest.Statistics.AverageSize))
-	fmt.Printf("Total layers:        %d\n", manifest.Statistics.TotalLayers)
-	fmt.Printf("Average layer size:  %s\n", formatBytes(manifest.Statistics.AverageLayerSize))
-	fmt.Printf("Images with sharing: %d\n", manifest.Statistics.ImagesWithSharing)
-	fmt.Printf("Manifest written to: %s\n", *output)
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "=== Generation Summary ===")
+	fmt.Fprintf(os.Stdout, "Total images:        %d\n", manifest.Statistics.TotalImages)
+	fmt.Fprintf(os.Stdout, "Total size:          %s\n", formatBytes(manifest.Statistics.TotalSize))
+	fmt.Fprintf(os.Stdout, "Average image size:  %s\n", formatBytes(manifest.Statistics.AverageSize))
+	fmt.Fprintf(os.Stdout, "Total layers:        %d\n", manifest.Statistics.TotalLayers)
+	fmt.Fprintf(os.Stdout, "Average layer size:  %s\n", formatBytes(manifest.Statistics.AverageLayerSize))
+	fmt.Fprintf(os.Stdout, "Images with sharing: %d\n", manifest.Statistics.ImagesWithSharing)
+	fmt.Fprintf(os.Stdout, "Manifest written to: %s\n", *output)
 }
 
 func validateConfig(config imagegen.Config) error {
 	if config.NumVariants < 1 {
-		return fmt.Errorf("variants must be at least 1")
+		return errors.New("variants must be at least 1")
 	}
 	if config.MinLayers < 1 {
-		return fmt.Errorf("min-layers must be at least 1")
+		return errors.New("min-layers must be at least 1")
 	}
 	if config.MaxLayers < config.MinLayers {
-		return fmt.Errorf("max-layers must be >= min-layers")
+		return errors.New("max-layers must be >= min-layers")
 	}
 	if config.LayerSharingPercent < 0 || config.LayerSharingPercent > 100 {
-		return fmt.Errorf("sharing must be between 0 and 100")
+		return errors.New("sharing must be between 0 and 100")
 	}
 	if config.Concurrency < 1 {
-		return fmt.Errorf("concurrency must be at least 1")
+		return errors.New("concurrency must be at least 1")
 	}
 	if config.BaseImage == "" {
-		return fmt.Errorf("base image cannot be empty")
+		return errors.New("base image cannot be empty")
 	}
 	if config.TargetRegistry == "" {
-		return fmt.Errorf("registry cannot be empty")
+		return errors.New("registry cannot be empty")
 	}
 	return nil
 }
 
 func formatBytes(bytes int64) string {
 	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
+		kb = 1024
+		mb = kb * 1024
+		gb = mb * 1024
 	)
 
 	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(KB))
+	case bytes >= gb:
+		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(gb))
+	case bytes >= mb:
+		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(mb))
+	case bytes >= kb:
+		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(kb))
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
