@@ -83,22 +83,16 @@ func TestUpstreamsAPI_List_EmptyConfiguration(t *testing.T) {
 func TestUpstreamsAPI_List_WithUpstreams(t *testing.T) {
 	config := newTestConfig(t, map[string]configuration.UpstreamConfiguration{
 		"dockerio": {
-			Registry: "https://registry-1.docker.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://registry-1.docker.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 		"gcr": {
-			Registry: "https://gcr.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://gcr.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 		"quay": {
-			Registry: "https://quay.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://quay.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 	})
 
@@ -140,19 +134,12 @@ func TestUpstreamsAPI_List_WithUpstreams(t *testing.T) {
 func TestUpstreamsAPI_Get_ExistingUpstream(t *testing.T) {
 	config := newTestConfig(t, map[string]configuration.UpstreamConfiguration{
 		"dockerio": {
-			Registry: "https://registry-1.docker.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://registry-1.docker.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 		"gcr": {
-			Registry: "https://gcr.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Basic: &configuration.UpstreamBasicAuthentication{
-					Username: "user",
-					Password: "pass",
-				},
-			},
+			Registry:       "https://gcr.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 	})
 
@@ -175,7 +162,7 @@ func TestUpstreamsAPI_Get_ExistingUpstream(t *testing.T) {
 			name:         "get gcr",
 			alias:        "gcr",
 			wantRegistry: "https://gcr.io",
-			wantAuthType: "basic",
+			wantAuthType: "anonymous",
 		},
 	}
 
@@ -213,10 +200,8 @@ func TestUpstreamsAPI_Get_ExistingUpstream(t *testing.T) {
 func TestUpstreamsAPI_Get_UnknownUpstream(t *testing.T) {
 	config := newTestConfig(t, map[string]configuration.UpstreamConfiguration{
 		"dockerio": {
-			Registry: "https://registry-1.docker.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://registry-1.docker.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 	})
 
@@ -270,10 +255,8 @@ func TestUpstreamsAPI_Get_EmptyConfiguration(t *testing.T) {
 func TestUpstreamsAPI_MethodNotAllowed(t *testing.T) {
 	config := newTestConfig(t, map[string]configuration.UpstreamConfiguration{
 		"dockerio": {
-			Registry: "https://registry-1.docker.io",
-			Authentication: configuration.UpstreamAuthentication{
-				Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-			},
+			Registry:       "https://registry-1.docker.io",
+			Authentication: configuration.UpstreamAuthentication{},
 		},
 	})
 

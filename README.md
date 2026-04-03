@@ -460,4 +460,4 @@ This is **by design** - Barnacle routes to multiple upstream registries, requiri
 | Accept header content negotiation | Can't negotiate manifest format (image vs list) | Medium |
 | Range request support (206 Partial Content) | Can't resume interrupted blob downloads | Low |
 | Accept-Ranges header on blob endpoints | Clients don't know ranges are unsupported | Low |
-| Content-Type header on HEAD blob | Minor, not strictly required by spec | Low |
+| Content-Type header on HEAD blob | Minor, not strictly required by spec | Low |Ok s

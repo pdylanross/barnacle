@@ -99,6 +99,19 @@ If the HEAD check returns `401` or `403`, barnacle returns the upstream's error 
 
 **Environment:** Cache is shared across all clients. No per-client scoping or revalidation needed since barnacle owns the credentials and all clients are treated equally.
 
+## Configuration schema design
+
+Auth settings are configured using a flat, named-key structure where each supported auth method has a dedicated top-level field. Only one method should be set at a time; this is enforced at validation rather than at the schema level.
+
+```yaml
+auth:
+    basic:
+        username: xxx
+        password: xxx
+```
+
+This approach keeps the schema straightforward and self-documenting — valid fields for each auth method are fully described without requiring a polymorphic type/spec envelope. Mutual exclusivity is validated explicitly on startup, failing fast with a clear error if misconfigured.
+
 ## Out of Scope
 
 - Client-facing auth enforcement (no plans to require clients to authenticate to barnacle itself)

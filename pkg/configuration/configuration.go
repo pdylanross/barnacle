@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ErrInvalidPort is returned when the server port is invalid.
@@ -75,7 +77,7 @@ type Configuration struct {
 
 // Validate checks that the configuration is valid.
 // Returns an error if any configuration value is invalid.
-func (c *Configuration) Validate() error {
+func (c *Configuration) Validate(logger *zap.Logger) error {
 	if err := c.Server.Validate(); err != nil {
 		return err
 	}
@@ -93,7 +95,7 @@ func (c *Configuration) Validate() error {
 		if alias == "" {
 			return fmt.Errorf("%w: upstream alias cannot be empty", ErrInvalidConfiguration)
 		}
-		if err := upstream.Validate(); err != nil {
+		if err := upstream.Validate(logger); err != nil {
 			return fmt.Errorf("upstream %q: %w", alias, err)
 		}
 	}
