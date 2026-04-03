@@ -1,9 +1,6 @@
----
-name: error-handling
-description: Skill for handling errors in code
----
+# Error Handling
 
-## Error Handling
+## Sentinel Errors
 - **NEVER use inline `fmt.Errorf()` calls in function returns** - Always use global error variables
 - Define global error variables at package level using `errors.New()`:
   ```go
@@ -22,7 +19,7 @@ description: Skill for handling errors in code
 - Always wrap underlying errors with `%w` to preserve the error chain
 - Include relevant context (filenames, paths, etc.) between the sentinel error and wrapped error
 
-### HTTP API Errors
+## HTTP API Errors
 - **ALWAYS use `internal/tk/httptk` error factories for HTTP API errors** - These conform to the OCI distribution specification
 - Use pre-defined factory methods instead of constructing errors manually:
   ```go

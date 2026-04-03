@@ -1,8 +1,3 @@
----
-name: api-swagger-support
-description: Guide for generating Swagger/OpenAPI documentation from Go code using swag and serving it via gin-swagger. Use when adding API documentation annotations to handlers, creating or updating Swagger comments, configuring swagger UI routes, running swag init/fmt, or troubleshooting documentation generation.
----
-
 # API Swagger Support (swag + gin-swagger)
 
 This project uses [swag](https://github.com/swaggo/swag) to generate Swagger 2.0 documentation from Go annotations, and [gin-swagger](https://github.com/swaggo/gin-swagger) to serve the interactive Swagger UI.
@@ -237,7 +232,7 @@ type Event struct {
     // time.Time auto-maps, but you can be explicit:
     CreatedAt time.Time `json:"createdAt" swaggertype:"string" format:"date-time"`
 
-    // Custom type → primitive
+    // Custom type -> primitive
     Status AppStatus `json:"status" swaggertype:"string" enums:"running,stopped"`
 
     // Map types
@@ -359,8 +354,8 @@ When adding swagger annotations to this codebase:
 
 ## Detailed References
 
-- See [references/annotation-patterns.md](references/annotation-patterns.md) for complete annotation examples matching this project's patterns
-- See [references/model-documentation.md](references/model-documentation.md) for struct tag patterns, enums, composition, and generics
+- See [swagger-annotation-patterns.md](swagger-annotation-patterns.md) for complete annotation examples matching this project's patterns
+- See [swagger-model-documentation.md](swagger-model-documentation.md) for struct tag patterns, enums, composition, and generics
 
 ## External Resources
 

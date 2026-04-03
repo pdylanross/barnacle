@@ -1,13 +1,8 @@
----
-name: environment-dependencies
-description: Standards for managing development environment tools and keeping the Makefile tools recipe in sync
----
+# Environment Dependencies
 
-## Environment Dependencies
+This covers the management of external development tools required to build, test, and develop the Barnacle project. All required tools must be documented here and installed via `make tools`.
 
-This skill covers the management of external development tools required to build, test, and develop the Barnacle project. All required tools must be documented here and installed via `make tools`.
-
-### Required Tools
+## Required Tools
 
 The following tools are required for development and are installed by `make tools`:
 
@@ -17,7 +12,7 @@ The following tools are required for development and are installed by `make tool
 | `goimports` | Code formatting with import organization | `go install golang.org/x/tools/cmd/goimports@latest` |
 | `golangci-lint` | Linting and static analysis (v2 required) | `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest` |
 
-### Adding a New Tool
+## Adding a New Tool
 
 When adding a new development tool dependency:
 
@@ -45,9 +40,9 @@ tools:
 	@echo "All tools installed successfully"
 ```
 
-Then update this skill document to include mockgen in the Required Tools table.
+Then update this document to include mockgen in the Required Tools table.
 
-### First-Time Setup
+## First-Time Setup
 
 New developers should run:
 
@@ -57,7 +52,7 @@ make tools
 
 This installs all required development tools. Run this command again if tools are updated or new tools are added.
 
-### Version Pinning
+## Version Pinning
 
 Currently, tools are installed at `@latest`. If version pinning becomes necessary for reproducibility, update the install commands to use specific versions:
 

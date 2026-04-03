@@ -1,7 +1,4 @@
----
-name: dependency-injection
-description: Dependency injection patterns and practices for this project
----
+# Dependency Injection
 
 ## Overview
 

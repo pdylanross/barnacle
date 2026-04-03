@@ -1,7 +1,4 @@
----
-name: unit-testing-patterns
-description: Unit testing patterns for this project
----
+# Unit Testing Patterns
 
 When writing unit tests for this project, ensure to always follow the following patterns:
 * Always include a test function for each exported function or method
@@ -19,7 +16,7 @@ When writing unit tests for this project, ensure to always follow the following 
 * Use `test.CreateTestLogger(t)` to create loggers in tests (integrates with Go testing framework, follows zap best practices)
 * Never use `zap.NewNop()` or create loggers manually - always use test utilities
 * Write table-driven tests with clear input/output expectations
-* Use package `_test` suffix (e.g., `configloader_test`) for external testing perspective 
+* Use package `_test` suffix (e.g., `configloader_test`) for external testing perspective
 * Include detailed error messages (expected vs. actual)
-* Test every exported function and error case 
+* Test every exported function and error case
 * For external test packages, explicitly declare types when using imported packages to avoid "imported and not used" errors
