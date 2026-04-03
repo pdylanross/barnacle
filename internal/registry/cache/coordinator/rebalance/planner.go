@@ -219,7 +219,6 @@ func (p *Planner) filterCooldownBlobs(
 			if onCooldown {
 				// Track size by tier for capacity calculation
 				if blob.Tier < len(nodeCooldownSizes) {
-					//nolint:gosec // size is always non-negative for valid blobs
 					nodeCooldownSizes[blob.Tier] += uint64(max(0, blob.Size))
 				}
 			} else {

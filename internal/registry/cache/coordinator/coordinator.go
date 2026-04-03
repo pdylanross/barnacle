@@ -322,7 +322,7 @@ func (c *coordinatorBlobCache) deleteLocation(ctx context.Context, digest string
 // even when multiple accesses occur in the same millisecond.
 //
 //nolint:gochecknoglobals // Required for atomic counter operations across instances
-var accessCounter uint64
+var accessCounter atomic.Uint64
 
 // recordAccess records an access event for a blob using a sorted set.
 // Each access is stored with the timestamp as the score and a unique ID as the member.
@@ -336,7 +336,7 @@ func (c *coordinatorBlobCache) recordAccess(ctx context.Context, digest string) 
 
 	// Use atomic increment to ensure unique member even in same millisecond
 	// Format: timestamp:counter to ensure uniqueness
-	counter := atomic.AddUint64(&accessCounter, 1)
+	counter := accessCounter.Add(1)
 	member := fmt.Sprintf("%d:%d", now, counter)
 
 	// Add the access event
@@ -351,7 +351,7 @@ func (c *coordinatorBlobCache) recordAccess(ctx context.Context, digest string) 
 	// TODO: Refactor sliding window cleanup into a background task.
 	// Clean up old entries outside the window (do this asynchronously to not block)
 	windowStart := now - c.accessWindowDuration.Milliseconds()
-	go func() {
+	go func() { //nolint:gosec // intentionally outlives request context for async cleanup
 		cleanErr := c.redis.ZRemRangeByScore(
 			context.Background(),
 			key,

@@ -487,3 +487,4 @@ linters:
         linters:
           - gochecknoglobals
           - gochecknoinits
+          - godot

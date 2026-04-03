@@ -1,6 +1,8 @@
 package rebalance
 
 import (
+	"strconv"
+
 	"github.com/pdylanross/barnacle/internal/node"
 	"github.com/pdylanross/barnacle/pkg/configuration"
 )
@@ -54,7 +56,7 @@ func (b *TierBucket) CanFit(sizeBytes int64) bool {
 // Assign adds a blob to this bucket and updates the assigned bytes.
 func (b *TierBucket) Assign(blob *EnrichedBlob) {
 	b.AssignedBlobs = append(b.AssignedBlobs, blob)
-	b.AssignedBytes += uint64(max(0, blob.Size)) //nolint:gosec // size validated by CanFit before Assign
+	b.AssignedBytes += uint64(max(0, blob.Size))
 }
 
 // BuildClusterCapacity creates a capacity snapshot from the node list.
@@ -245,7 +247,7 @@ func PlaceBlobsOnNodes(buckets []*TierBucket, capacity *ClusterCapacity) []*Node
 			if currentNodeCap, ok := nodeCapMap[currentNode]; ok && currentNodeCap.IsHealthy {
 				if targetTier < len(currentNodeCap.Tiers) {
 					tierCap := currentNodeCap.Tiers[targetTier]
-					key := currentNode + ":" + string(rune(targetTier))
+					key := currentNode + ":" + strconv.Itoa(targetTier)
 					used := assignedBytes[key]
 					available := tierCap.FreeBytes
 					if used < available {
@@ -254,7 +256,7 @@ func PlaceBlobsOnNodes(buckets []*TierBucket, capacity *ClusterCapacity) []*Node
 						available = 0
 					}
 
-					blobSize := uint64(max(0, blob.Size)) //nolint:gosec // size is always non-negative for valid blobs
+					blobSize := uint64(max(0, blob.Size))
 					if blobSize <= available {
 						// Keep on current node
 						placement.TargetNode = currentNode
@@ -277,7 +279,7 @@ func PlaceBlobsOnNodes(buckets []*TierBucket, capacity *ClusterCapacity) []*Node
 				}
 
 				tierCap := nodeCap.Tiers[targetTier]
-				key := nodeCap.NodeID + ":" + string(rune(targetTier))
+				key := nodeCap.NodeID + ":" + strconv.Itoa(targetTier)
 				used := assignedBytes[key]
 				available := tierCap.FreeBytes
 				if used < available {
@@ -286,7 +288,7 @@ func PlaceBlobsOnNodes(buckets []*TierBucket, capacity *ClusterCapacity) []*Node
 					available = 0
 				}
 
-				blobSize := uint64(max(0, blob.Size)) //nolint:gosec // size is always non-negative for valid blobs
+				blobSize := uint64(max(0, blob.Size))
 				if blobSize <= available {
 					placement.TargetNode = nodeCap.NodeID
 					placement.NeedsMove = nodeCap.NodeID != blob.CurrentNode || targetTier != blob.CurrentTier
