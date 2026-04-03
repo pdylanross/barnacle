@@ -132,6 +132,182 @@
                 }
             }
         },
+        "/api/v1/nodes/{nodeId}/blobs/finalize": {
+            "post": {
+                "description": "Completes a blob transfer by updating Redis location",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rebalance"
+                ],
+                "summary": "Finalize blob transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Finalize request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/rebalanceapi.FinalizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/rebalanceapi.FinalizeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeId}/blobs/receive": {
+            "post": {
+                "description": "Receives blob data for a reserved transfer",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rebalance"
+                ],
+                "summary": "Receive blob data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Reservation ID",
+                        "name": "X-Reservation-ID",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Expected blob digest",
+                        "name": "X-Digest",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/rebalanceapi.ReceiveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Digest mismatch",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found or expired",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeId}/blobs/reserve": {
+            "post": {
+                "description": "Reserves disk space for an incoming blob transfer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rebalance"
+                ],
+                "summary": "Reserve space for blob",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node identifier",
+                        "name": "nodeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reserve request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/rebalanceapi.ReserveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/rebalanceapi.ReserveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    },
+                    "409": {
+                        "description": "Blob already exists",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    },
+                    "507": {
+                        "description": "Insufficient storage",
+                        "schema": {
+                            "$ref": "#/definitions/httptk.ErrorsList"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes/{nodeId}/blobs/{digest}": {
             "get": {
                 "description": "Returns information about a specific blob on the node",
@@ -403,11 +579,6 @@
         "nodesapi.NodeResponse": {
             "type": "object",
             "properties": {
-                "hostname": {
-                    "description": "Hostname is the system hostname of the node.",
-                    "type": "string",
-                    "example": "barnacle-1"
-                },
                 "lastUpdated": {
                     "description": "LastUpdated is the timestamp when this information was last updated.",
                     "type": "string"
@@ -441,6 +612,102 @@
                     "items": {
                         "$ref": "#/definitions/nodesapi.DiskUsageResponse"
                     }
+                }
+            }
+        },
+        "rebalanceapi.FinalizeRequest": {
+            "type": "object",
+            "required": [
+                "digest",
+                "reservationId"
+            ],
+            "properties": {
+                "digest": {
+                    "description": "Digest is the digest of the blob being finalized.",
+                    "type": "string",
+                    "example": "sha256:abc123def456..."
+                },
+                "reservationId": {
+                    "description": "ReservationID is the reservation to finalize.",
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "tier": {
+                    "description": "Tier is the cache tier where the blob was stored.",
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "rebalanceapi.FinalizeResponse": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "description": "Success indicates whether finalization succeeded.",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "rebalanceapi.ReceiveResponse": {
+            "type": "object",
+            "properties": {
+                "digest": {
+                    "description": "Digest is the digest of the received blob.",
+                    "type": "string",
+                    "example": "sha256:abc123def456..."
+                },
+                "size": {
+                    "description": "Size is the size of the received blob in bytes.",
+                    "type": "integer",
+                    "example": 1048576
+                }
+            }
+        },
+        "rebalanceapi.ReserveRequest": {
+            "type": "object",
+            "required": [
+                "digest",
+                "mediaType",
+                "size",
+                "sourceNodeId"
+            ],
+            "properties": {
+                "digest": {
+                    "description": "Digest is the content-addressable digest of the blob to reserve space for.",
+                    "type": "string",
+                    "example": "sha256:abc123def456..."
+                },
+                "mediaType": {
+                    "description": "MediaType is the OCI media type of the blob.",
+                    "type": "string",
+                    "example": "application/vnd.oci.image.layer.v1.tar+gzip"
+                },
+                "size": {
+                    "description": "Size is the size of the blob in bytes.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1048576
+                },
+                "sourceNodeId": {
+                    "description": "SourceNodeID is the node that currently holds the blob.",
+                    "type": "string",
+                    "example": "node-1"
+                }
+            }
+        },
+        "rebalanceapi.ReserveResponse": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "description": "ExpiresAt is when this reservation expires if not used.",
+                    "type": "string",
+                    "example": "2024-01-15T10:30:00Z"
+                },
+                "reservationId": {
+                    "description": "ReservationID is a unique identifier for this reservation.",
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
         },

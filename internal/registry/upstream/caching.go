@@ -505,7 +505,7 @@ func (c *cachingUpstream) GetBlob(ctx context.Context, repo string, digest v1.Ha
 	// Start a goroutine to read from upstream, write to cache, and close the pipe
 	// Capture repo for use in the goroutine since it may outlive the request
 	repoName := repo
-	go func() {
+	go func() { //nolint:gosec // intentionally outlives request context for background caching
 		defer reservation.Release()
 		defer upstreamReader.Close()
 		defer pipeWriter.Close()

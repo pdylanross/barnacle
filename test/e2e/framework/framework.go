@@ -71,8 +71,9 @@ func (f *Framework) Setup(ctx context.Context) error {
 	}
 
 	// Wait for barnacle to be ready
-	if err := f.barnacle.WaitForReady(ctx, 2*time.Minute); err != nil {
-		return fmt.Errorf("barnacle not ready: %w", err)
+	const readyTimeout = 2 * time.Minute
+	if readyErr := f.barnacle.WaitForReady(ctx, readyTimeout); readyErr != nil {
+		return fmt.Errorf("barnacle not ready: %w", readyErr)
 	}
 
 	f.logger.Info("Framework setup complete")

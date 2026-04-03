@@ -83,10 +83,6 @@ definitions:
     type: object
   nodesapi.NodeResponse:
     properties:
-      hostname:
-        description: Hostname is the system hostname of the node.
-        example: barnacle-1
-        type: string
       lastUpdated:
         description: LastUpdated is the timestamp when this information was last updated.
         type: string
@@ -110,6 +106,79 @@ definitions:
         items:
           $ref: '#/definitions/nodesapi.DiskUsageResponse'
         type: array
+    type: object
+  rebalanceapi.FinalizeRequest:
+    properties:
+      digest:
+        description: Digest is the digest of the blob being finalized.
+        example: sha256:abc123def456...
+        type: string
+      reservationId:
+        description: ReservationID is the reservation to finalize.
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      tier:
+        description: Tier is the cache tier where the blob was stored.
+        example: 0
+        type: integer
+    required:
+    - digest
+    - reservationId
+    type: object
+  rebalanceapi.FinalizeResponse:
+    properties:
+      success:
+        description: Success indicates whether finalization succeeded.
+        example: true
+        type: boolean
+    type: object
+  rebalanceapi.ReceiveResponse:
+    properties:
+      digest:
+        description: Digest is the digest of the received blob.
+        example: sha256:abc123def456...
+        type: string
+      size:
+        description: Size is the size of the received blob in bytes.
+        example: 1048576
+        type: integer
+    type: object
+  rebalanceapi.ReserveRequest:
+    properties:
+      digest:
+        description: Digest is the content-addressable digest of the blob to reserve
+          space for.
+        example: sha256:abc123def456...
+        type: string
+      mediaType:
+        description: MediaType is the OCI media type of the blob.
+        example: application/vnd.oci.image.layer.v1.tar+gzip
+        type: string
+      size:
+        description: Size is the size of the blob in bytes.
+        example: 1048576
+        minimum: 1
+        type: integer
+      sourceNodeId:
+        description: SourceNodeID is the node that currently holds the blob.
+        example: node-1
+        type: string
+    required:
+    - digest
+    - mediaType
+    - size
+    - sourceNodeId
+    type: object
+  rebalanceapi.ReserveResponse:
+    properties:
+      expiresAt:
+        description: ExpiresAt is when this reservation expires if not used.
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      reservationId:
+        description: ReservationID is a unique identifier for this reservation.
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
     type: object
   upstreamsapi.GetUpstreamResponse:
     properties:
@@ -267,6 +336,123 @@ paths:
       summary: Get blob
       tags:
       - blobs
+  /api/v1/nodes/{nodeId}/blobs/finalize:
+    post:
+      consumes:
+      - application/json
+      description: Completes a blob transfer by updating Redis location
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      - description: Finalize request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/rebalanceapi.FinalizeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rebalanceapi.FinalizeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Finalize blob transfer
+      tags:
+      - rebalance
+  /api/v1/nodes/{nodeId}/blobs/receive:
+    post:
+      consumes:
+      - application/octet-stream
+      description: Receives blob data for a reserved transfer
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      - description: Reservation ID
+        in: header
+        name: X-Reservation-ID
+        required: true
+        type: string
+      - description: Expected blob digest
+        in: header
+        name: X-Digest
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/rebalanceapi.ReceiveResponse'
+        "400":
+          description: Digest mismatch
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+        "404":
+          description: Reservation not found or expired
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Receive blob data
+      tags:
+      - rebalance
+  /api/v1/nodes/{nodeId}/blobs/reserve:
+    post:
+      consumes:
+      - application/json
+      description: Reserves disk space for an incoming blob transfer
+      parameters:
+      - description: Node identifier
+        in: path
+        name: nodeId
+        required: true
+        type: string
+      - description: Reserve request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/rebalanceapi.ReserveRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/rebalanceapi.ReserveResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+        "409":
+          description: Blob already exists
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+        "507":
+          description: Insufficient storage
+          schema:
+            $ref: '#/definitions/httptk.ErrorsList'
+      summary: Reserve space for blob
+      tags:
+      - rebalance
   /api/v1/nodes/me:
     get:
       description: Returns information about this node

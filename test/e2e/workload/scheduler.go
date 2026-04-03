@@ -17,10 +17,12 @@ type Scheduler struct {
 	workers    []*Worker
 }
 
+const workerBufferMultiplier = 10
+
 // NewScheduler creates a new scheduler.
 func NewScheduler(fw *framework.Framework, logger *zap.Logger) *Scheduler {
 	numWorkers := fw.Options().Workers
-	bufferSize := numWorkers * 10
+	bufferSize := numWorkers * workerBufferMultiplier
 
 	return &Scheduler{
 		framework:  fw,
@@ -42,7 +44,7 @@ func (s *Scheduler) Run(ctx context.Context) ([]WorkResult, error) {
 
 	// Start workers
 	var wg sync.WaitGroup
-	for i := 0; i < opts.Workers; i++ {
+	for i := range opts.Workers {
 		s.workers[i] = NewWorker(i, s.framework, s.workChan, s.resultChan)
 		wg.Add(1)
 		go func(w *Worker) {
@@ -54,7 +56,7 @@ func (s *Scheduler) Run(ctx context.Context) ([]WorkResult, error) {
 	// Queue work items
 	go func() {
 		defer close(s.workChan)
-		for i := 0; i < opts.Iterations; i++ {
+		for i := range opts.Iterations {
 			select {
 			case <-ctx.Done():
 				return
@@ -121,7 +123,7 @@ func (s *Scheduler) RunWithProgress(ctx context.Context, progressFn func(complet
 
 	// Start workers
 	var wg sync.WaitGroup
-	for i := 0; i < opts.Workers; i++ {
+	for i := range opts.Workers {
 		s.workers[i] = NewWorker(i, s.framework, s.workChan, s.resultChan)
 		wg.Add(1)
 		go func(w *Worker) {
@@ -133,7 +135,7 @@ func (s *Scheduler) RunWithProgress(ctx context.Context, progressFn func(complet
 	// Queue work items
 	go func() {
 		defer close(s.workChan)
-		for i := 0; i < opts.Iterations; i++ {
+		for i := range opts.Iterations {
 			select {
 			case <-ctx.Done():
 				return

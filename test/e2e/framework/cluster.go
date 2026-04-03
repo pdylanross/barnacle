@@ -114,6 +114,8 @@ func (c *Cluster) WaitForPodComplete(ctx context.Context, name string, timeout t
 			return true, nil
 		case corev1.PodPending, corev1.PodRunning:
 			return false, nil
+		case corev1.PodUnknown:
+			return false, nil
 		default:
 			return false, fmt.Errorf("unexpected pod phase: %s", pod.Status.Phase)
 		}
@@ -144,6 +146,8 @@ func (c *Cluster) WaitForPodRunning(ctx context.Context, name string, timeout ti
 		case corev1.PodSucceeded, corev1.PodFailed:
 			return false, fmt.Errorf("pod completed unexpectedly with phase: %s", pod.Status.Phase)
 		case corev1.PodPending:
+			return false, nil
+		case corev1.PodUnknown:
 			return false, nil
 		default:
 			return false, fmt.Errorf("unexpected pod phase: %s", pod.Status.Phase)
@@ -197,7 +201,7 @@ func (c *Cluster) WaitForDeploymentReady(ctx context.Context, name string, timeo
 func (c *Cluster) CheckNamespaceExists(ctx context.Context) (bool, error) {
 	_, err := c.clientset.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("failed to get namespace %s: %w", c.namespace, err)
 	}
 	return true, nil
 }

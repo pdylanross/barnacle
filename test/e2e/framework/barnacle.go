@@ -2,13 +2,15 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Barnacle provides helpers for interacting with the barnacle deployment.
@@ -21,12 +23,17 @@ type Barnacle struct {
 	logger      *zap.Logger
 }
 
+const (
+	barnaclePort      = 8080
+	httpClientTimeout = 10 * time.Second
+)
+
 // NewBarnacle creates a new barnacle helper.
 func NewBarnacle(cluster *Cluster, serviceName string, logger *zap.Logger) *Barnacle {
 	return &Barnacle{
 		cluster:     cluster,
 		serviceName: serviceName,
-		port:        8080,
+		port:        barnaclePort,
 		logger:      logger,
 	}
 }
@@ -68,7 +75,7 @@ func (b *Barnacle) ImageURL(upstream, imageName, tag string) string {
 	if b.nodeAddress != "" {
 		host = b.nodeAddress
 	} else {
-		host = b.serviceName + "." + b.cluster.Namespace() + ".svc.cluster.local:" + fmt.Sprint(b.port)
+		host = b.serviceName + "." + b.cluster.Namespace() + ".svc.cluster.local:" + strconv.Itoa(b.port)
 	}
 	return fmt.Sprintf("%s/%s/%s:%s", host, upstream, imageName, tag)
 }
@@ -101,7 +108,7 @@ func (b *Barnacle) CheckHealth(ctx context.Context, localPort int) error {
 		b.logger.Debug("Checking health via localhost", zap.String("url", url))
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: httpClientTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -126,13 +133,13 @@ func (b *Barnacle) CheckHealth(ctx context.Context, localPort int) error {
 // Returns an error if ingress host is not configured.
 func (b *Barnacle) CheckHealthViaIngress(ctx context.Context) error {
 	if b.ingressHost == "" {
-		return fmt.Errorf("ingress host not configured")
+		return errors.New("ingress host not configured")
 	}
 
 	url := fmt.Sprintf("http://%s/healthz", b.ingressHost)
 	b.logger.Debug("Checking health via ingress", zap.String("url", url))
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: httpClientTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

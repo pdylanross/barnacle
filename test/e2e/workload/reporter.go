@@ -20,10 +20,10 @@ type Report struct {
 
 // Summary contains high-level statistics.
 type Summary struct {
-	TotalIterations int     `json:"total_iterations"`
-	SuccessCount    int     `json:"success_count"`
-	FailureCount    int     `json:"failure_count"`
-	SuccessRate           float64 `json:"success_rate"`
+	TotalIterations      int     `json:"total_iterations"`
+	SuccessCount         int     `json:"success_count"`
+	FailureCount         int     `json:"failure_count"`
+	SuccessRate          float64 `json:"success_rate"`
 	EventualSuccessCount int     `json:"eventual_success_count"`
 	TotalDuration        float64 `json:"total_duration_s"`
 }
@@ -65,6 +65,8 @@ func NewReporter(results []WorkResult, includeRaw bool) *Reporter {
 	}
 }
 
+const percentMultiplier = 100
+
 // Generate generates a report from the results.
 func (r *Reporter) Generate() *Report {
 	report := &Report{
@@ -102,7 +104,7 @@ func (r *Reporter) Generate() *Report {
 		TotalIterations:      len(r.results),
 		SuccessCount:         successCount,
 		FailureCount:         failureCount,
-		SuccessRate:          float64(successCount) / float64(len(r.results)) * 100,
+		SuccessRate:          float64(successCount) / float64(len(r.results)) * percentMultiplier,
 		EventualSuccessCount: eventualSuccessCount,
 		TotalDuration:        totalDuration,
 	}
@@ -123,6 +125,13 @@ func (r *Reporter) Generate() *Report {
 
 	return report
 }
+
+const (
+	p50 = 50
+	p90 = 90
+	p95 = 95
+	p99 = 99
+)
 
 func (r *Reporter) calculateLatencies() Latencies {
 	// Filter out zero-duration results where the watch didn't capture timing
@@ -153,10 +162,10 @@ func (r *Reporter) calculateLatencies() Latencies {
 		Max:    durations[n-1],
 		Mean:   mean,
 		Median: durations[n/2],
-		P50:    percentile(durations, 50),
-		P90:    percentile(durations, 90),
-		P95:    percentile(durations, 95),
-		P99:    percentile(durations, 99),
+		P50:    percentile(durations, p50),
+		P90:    percentile(durations, p90),
+		P95:    percentile(durations, p95),
+		P99:    percentile(durations, p99),
 	}
 }
 
@@ -164,7 +173,7 @@ func percentile(sorted []float64, p int) float64 {
 	if len(sorted) == 0 {
 		return 0
 	}
-	idx := (p * len(sorted)) / 100
+	idx := (p * len(sorted)) / percentMultiplier
 	if idx >= len(sorted) {
 		idx = len(sorted) - 1
 	}
@@ -204,6 +213,8 @@ func (r *Reporter) calculateImageStats(imageName string, results []WorkResult) I
 	return stats
 }
 
+const filePermissions = 0644
+
 // WriteJSON writes the report to a JSON file.
 func (r *Report) WriteJSON(path string) error {
 	data, err := json.MarshalIndent(r, "", "  ")
@@ -211,24 +222,26 @@ func (r *Report) WriteJSON(path string) error {
 		return fmt.Errorf("failed to marshal report: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write report: %w", err)
+	if writeErr := os.WriteFile(path, data, filePermissions); writeErr != nil {
+		return fmt.Errorf("failed to write report: %w", writeErr)
 	}
 
 	return nil
 }
 
+const dirPermissions = 0755
+
 // WriteOutputDir writes the report and failed pod events to an output directory.
 func (r *Reporter) WriteOutputDir(dir string) error {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+	if mkdirErr := os.MkdirAll(dir, dirPermissions); mkdirErr != nil {
+		return fmt.Errorf("failed to create output directory: %w", mkdirErr)
 	}
 
 	report := r.Generate()
 
 	// Write report.json
-	if err := report.WriteJSON(filepath.Join(dir, "report.json")); err != nil {
-		return err
+	if reportErr := report.WriteJSON(filepath.Join(dir, "report.json")); reportErr != nil {
+		return reportErr
 	}
 
 	// Collect failed pod events from results
@@ -240,14 +253,14 @@ func (r *Reporter) WriteOutputDir(dir string) error {
 	}
 
 	// Write failed-pod-events.json
-	eventsData, err := json.MarshalIndent(failedEvents, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal failed pod events: %w", err)
+	eventsData, marshalErr := json.MarshalIndent(failedEvents, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("failed to marshal failed pod events: %w", marshalErr)
 	}
 
 	eventsPath := filepath.Join(dir, "failed-pod-events.json")
-	if err := os.WriteFile(eventsPath, eventsData, 0644); err != nil {
-		return fmt.Errorf("failed to write failed pod events: %w", err)
+	if writeErr := os.WriteFile(eventsPath, eventsData, filePermissions); writeErr != nil {
+		return fmt.Errorf("failed to write failed pod events: %w", writeErr)
 	}
 
 	// Collect eventual success events from results
@@ -259,14 +272,14 @@ func (r *Reporter) WriteOutputDir(dir string) error {
 	}
 
 	// Write eventual-success-events.json
-	esData, err := json.MarshalIndent(eventualSuccessEvents, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal eventual success events: %w", err)
+	esData, esMarshalErr := json.MarshalIndent(eventualSuccessEvents, "", "  ")
+	if esMarshalErr != nil {
+		return fmt.Errorf("failed to marshal eventual success events: %w", esMarshalErr)
 	}
 
 	esPath := filepath.Join(dir, "eventual-success-events.json")
-	if err := os.WriteFile(esPath, esData, 0644); err != nil {
-		return fmt.Errorf("failed to write eventual success events: %w", err)
+	if esWriteErr := os.WriteFile(esPath, esData, filePermissions); esWriteErr != nil {
+		return fmt.Errorf("failed to write eventual success events: %w", esWriteErr)
 	}
 
 	return nil
@@ -274,22 +287,22 @@ func (r *Reporter) WriteOutputDir(dir string) error {
 
 // PrintSummary prints a human-readable summary to stdout.
 func (r *Report) PrintSummary() {
-	fmt.Println()
-	fmt.Println("=== E2E Test Results ===")
-	fmt.Println()
-	fmt.Printf("Total Iterations:     %d\n", r.Summary.TotalIterations)
-	fmt.Printf("Success Count:        %d\n", r.Summary.SuccessCount)
-	fmt.Printf("Failure Count:        %d\n", r.Summary.FailureCount)
-	fmt.Printf("Eventual Successes:   %d\n", r.Summary.EventualSuccessCount)
-	fmt.Printf("Success Rate:         %.2f%%\n", r.Summary.SuccessRate)
-	fmt.Println()
-	fmt.Println("Latency Percentiles (Pull Time):")
-	fmt.Printf("  Min:    %.3fs\n", r.Latencies.Min)
-	fmt.Printf("  P50:    %.3fs\n", r.Latencies.P50)
-	fmt.Printf("  P90:    %.3fs\n", r.Latencies.P90)
-	fmt.Printf("  P95:    %.3fs\n", r.Latencies.P95)
-	fmt.Printf("  P99:    %.3fs\n", r.Latencies.P99)
-	fmt.Printf("  Max:    %.3fs\n", r.Latencies.Max)
-	fmt.Printf("  Mean:   %.3fs\n", r.Latencies.Mean)
-	fmt.Println()
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "=== E2E Test Results ===")
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintf(os.Stdout, "Total Iterations:     %d\n", r.Summary.TotalIterations)
+	fmt.Fprintf(os.Stdout, "Success Count:        %d\n", r.Summary.SuccessCount)
+	fmt.Fprintf(os.Stdout, "Failure Count:        %d\n", r.Summary.FailureCount)
+	fmt.Fprintf(os.Stdout, "Eventual Successes:   %d\n", r.Summary.EventualSuccessCount)
+	fmt.Fprintf(os.Stdout, "Success Rate:         %.2f%%\n", r.Summary.SuccessRate)
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "Latency Percentiles (Pull Time):")
+	fmt.Fprintf(os.Stdout, "  Min:    %.3fs\n", r.Latencies.Min)
+	fmt.Fprintf(os.Stdout, "  P50:    %.3fs\n", r.Latencies.P50)
+	fmt.Fprintf(os.Stdout, "  P90:    %.3fs\n", r.Latencies.P90)
+	fmt.Fprintf(os.Stdout, "  P95:    %.3fs\n", r.Latencies.P95)
+	fmt.Fprintf(os.Stdout, "  P99:    %.3fs\n", r.Latencies.P99)
+	fmt.Fprintf(os.Stdout, "  Max:    %.3fs\n", r.Latencies.Max)
+	fmt.Fprintf(os.Stdout, "  Mean:   %.3fs\n", r.Latencies.Mean)
+	fmt.Fprintln(os.Stdout)
 }
