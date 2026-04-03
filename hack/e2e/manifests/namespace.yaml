@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: barnacle-e2e
+  labels:
+    app.kubernetes.io/name: barnacle-e2e
+    app.kubernetes.io/part-of: barnacle

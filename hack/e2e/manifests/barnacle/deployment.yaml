@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barnacle
+  namespace: barnacle-e2e
+  labels:
+    app.kubernetes.io/name: barnacle
+    app.kubernetes.io/part-of: barnacle-e2e
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: barnacle
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: barnacle
+        app.kubernetes.io/part-of: barnacle-e2e
+    spec:
+      containers:
+        - name: barnacle
+          image: barnacle:e2e
+          imagePullPolicy: Always
+          args:
+            - serve
+            - --configDir
+            - /etc/barnacle
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: BARNACLE_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DEVELOPMENT
+              value: "true"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/barnacle
+              readOnly: true
+            - name: cache-hot
+              mountPath: /var/cache/barnacle/hot
+            - name: cache-cold
+              mountPath: /var/cache/barnacle/cold
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: barnacle-config
+        - name: cache-hot
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: cache-cold
+          emptyDir:
+            sizeLimit: 5Gi

@@ -8,6 +8,12 @@
 *.so
 *.dylib
 dist/
+bin/
+
+# E2E test artifacts
+e2e-images.json
+e2e-results-*.json
+test/e2e/out
 
 # Test binary, built with `go test -c`
 *.test

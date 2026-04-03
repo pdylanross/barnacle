@@ -37,6 +37,94 @@ func TestDiskTierConfiguration_Validate(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, configuration.ErrInvalidConfiguration)
 	})
+
+	t.Run("valid sizeLimit", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "5Gi",
+		}
+		err := tier.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("invalid sizeLimit", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "invalid",
+		}
+		err := tier.Validate()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, configuration.ErrInvalidConfiguration)
+	})
+}
+
+func TestDiskTierConfiguration_GetSizeLimitBytes(t *testing.T) {
+	t.Run("empty sizeLimit returns 0", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier: 0,
+			Path: "/var/cache/tier0",
+		}
+		limit, err := tier.GetSizeLimitBytes()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(0), limit)
+	})
+
+	t.Run("gibibytes", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "5Gi",
+		}
+		limit, err := tier.GetSizeLimitBytes()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(5*1024*1024*1024), limit)
+	})
+
+	t.Run("mebibytes", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "500Mi",
+		}
+		limit, err := tier.GetSizeLimitBytes()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(500*1024*1024), limit)
+	})
+
+	t.Run("gigabytes decimal", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "10G",
+		}
+		limit, err := tier.GetSizeLimitBytes()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10*1000*1000*1000), limit)
+	})
+
+	t.Run("plain bytes", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "1073741824",
+		}
+		limit, err := tier.GetSizeLimitBytes()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1073741824), limit)
+	})
+
+	t.Run("invalid format returns error", func(t *testing.T) {
+		tier := configuration.DiskTierConfiguration{
+			Tier:      0,
+			Path:      "/var/cache/tier0",
+			SizeLimit: "invalid",
+		}
+		_, err := tier.GetSizeLimitBytes()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid sizeLimit")
+	})
 }
 
 func TestDiskCacheConfiguration_Validate(t *testing.T) {

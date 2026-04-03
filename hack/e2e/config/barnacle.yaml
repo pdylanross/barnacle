@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+redis:
+  addr: redis.barnacle-e2e.svc.cluster.local:6379
+
+cache:
+  memory:
+    tagLimit: 10000
+    manifestMemoryLimitMi: 100
+    tagTTL: 5m
+  disk:
+    tiers:
+      - tier: 0
+        path: /var/cache/barnacle/hot
+        sizeLimit: 2Gi
+      - tier: 1
+        path: /var/cache/barnacle/cold
+        sizeLimit: 5Gi
+    descriptorLimit: 10000
+
+rebalance:
+  enabled: true
+
+upstreams:
+  local:
+    registry: registry.barnacle-e2e.svc.cluster.local:5000
+    insecure: true
