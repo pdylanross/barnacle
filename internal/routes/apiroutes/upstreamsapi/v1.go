@@ -76,17 +76,6 @@ func (c *upstreamControllerV1) Get(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, upstreamdtos.GetUpstreamResponse{
 		Alias:    alias,
 		Registry: cfg.Registry,
-		AuthType: authType(&cfg.Authentication),
+		AuthType: cfg.Authentication.GetAuthType().GetName(),
 	})
-}
-
-// authType returns a string identifying the configured authentication type.
-func authType(auth *configuration.UpstreamAuthentication) string {
-	if auth.Basic != nil {
-		return "basic"
-	}
-	if auth.Bearer != nil {
-		return "bearer"
-	}
-	return "anonymous"
 }

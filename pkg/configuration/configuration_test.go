@@ -9,6 +9,7 @@ import (
 	"github.com/knadh/koanf/v2"
 
 	"github.com/pdylanross/barnacle/pkg/configuration"
+	testutils "github.com/pdylanross/barnacle/test"
 )
 
 func TestConfiguration_EmptyYAML(t *testing.T) {
@@ -361,9 +362,6 @@ func TestConfiguration_Validate(t *testing.T) {
 				Upstreams: map[string]configuration.UpstreamConfiguration{
 					"docker.io": {
 						Registry: "https://registry-1.docker.io",
-						Authentication: configuration.UpstreamAuthentication{
-							Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-						},
 					},
 				},
 			},
@@ -380,18 +378,9 @@ func TestConfiguration_Validate(t *testing.T) {
 				Upstreams: map[string]configuration.UpstreamConfiguration{
 					"docker.io": {
 						Registry: "https://registry-1.docker.io",
-						Authentication: configuration.UpstreamAuthentication{
-							Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-						},
 					},
 					"gcr.io": {
 						Registry: "https://gcr.io",
-						Authentication: configuration.UpstreamAuthentication{
-							Basic: &configuration.UpstreamBasicAuthentication{
-								Username: "user",
-								Password: "pass",
-							},
-						},
 					},
 				},
 			},
@@ -408,9 +397,6 @@ func TestConfiguration_Validate(t *testing.T) {
 				Upstreams: map[string]configuration.UpstreamConfiguration{
 					"": {
 						Registry: "https://registry-1.docker.io",
-						Authentication: configuration.UpstreamAuthentication{
-							Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-						},
 					},
 				},
 			},
@@ -428,32 +414,6 @@ func TestConfiguration_Validate(t *testing.T) {
 				Upstreams: map[string]configuration.UpstreamConfiguration{
 					"docker.io": {
 						Registry: "",
-						Authentication: configuration.UpstreamAuthentication{
-							Anonymous: &configuration.UpstreamAnonymousAuthentication{},
-						},
-					},
-				},
-			},
-			wantErr: true,
-			errType: configuration.ErrInvalidAuthConfiguration,
-		},
-		{
-			name: "invalid upstream authentication",
-			config: configuration.Configuration{
-				Server: configuration.ServerConfiguration{
-					Port: 8080,
-				},
-				Redis: validRedis,
-				Cache: validCache,
-				Upstreams: map[string]configuration.UpstreamConfiguration{
-					"docker.io": {
-						Registry: "https://registry-1.docker.io",
-						Authentication: configuration.UpstreamAuthentication{
-							Basic: &configuration.UpstreamBasicAuthentication{
-								Username: "",
-								Password: "pass",
-							},
-						},
 					},
 				},
 			},
@@ -462,9 +422,11 @@ func TestConfiguration_Validate(t *testing.T) {
 		},
 	}
 
+	logger := testutils.CreateTestLogger(t)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
+			err := tt.config.Validate(logger)
 
 			if tt.wantErr && err == nil {
 				t.Error("expected error, got nil")

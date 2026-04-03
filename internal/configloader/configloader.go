@@ -67,7 +67,7 @@ func LoadConfig(configDirectory string, logger *zap.Logger) (*configuration.Conf
 
 	// Validate the configuration
 	log.Debug("Validating configuration")
-	if err := config.Validate(); err != nil {
+	if err := config.Validate(log); err != nil {
 		log.Error("Configuration validation failed", zap.Error(err))
 		return nil, fmt.Errorf("%w: %w", ErrValidateConfiguration, err)
 	}

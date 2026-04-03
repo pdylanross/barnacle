@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -34,27 +33,9 @@ type standardUpstream struct {
 	logger *zap.Logger
 }
 
-// remoteOptions returns the remote options for upstream registry operations,
-// including authentication if configured.
+// remoteOptions returns the remote options for upstream registry operations.
 func (s *standardUpstream) remoteOptions(ctx context.Context) []remote.Option {
-	opts := []remote.Option{remote.WithContext(ctx)}
-
-	auth := s.config.Authentication
-	switch {
-	case auth.Basic != nil:
-		opts = append(opts, remote.WithAuth(authn.FromConfig(authn.AuthConfig{
-			Username: auth.Basic.Username,
-			Password: auth.Basic.Password,
-		})))
-	case auth.Bearer != nil:
-		opts = append(opts, remote.WithAuth(authn.FromConfig(authn.AuthConfig{
-			RegistryToken: auth.Bearer.Token,
-		})))
-	default:
-		// Anonymous authentication - no auth option needed
-	}
-
-	return opts
+	return []remote.Option{remote.WithContext(ctx)}
 }
 
 // buildReference constructs a reference string from registry, repo, and tag/digest.
