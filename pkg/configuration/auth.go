@@ -58,7 +58,11 @@ func (u *UpstreamAuthentication) Validate(logger *zap.Logger) error {
 		return u.Anonymous.Validate()
 	}
 
-	return u.Passthrough.Validate()
+	if u.Passthrough != nil {
+		return u.Passthrough.Validate()
+	}
+
+	return nil
 }
 
 // GetAuthType returns the configured authentication mode.
