@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: minikube-ingress-dns
+    app.kubernetes.io/part-of: kube-system
+  name: kube-ingress-dns-minikube
+  namespace: kube-system
+spec:
+  containers:
+  - env:
+    - name: DNS_PORT
+      value: "53"
+    - name: POD_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.podIP
+    image: docker.io/kicbase/minikube-ingress-dns:0.0.4@sha256:d7c3fd25a0ea8fa62d4096eda202b3fc69d994b01ed6ab431def629f16ba1a89
+    imagePullPolicy: IfNotPresent
+    name: minikube-ingress-dns
+    ports:
+    - containerPort: 53
+      hostPort: 53
+      protocol: UDP
+    volumeMounts:
+    - mountPath: /config
+      name: minikube-ingress-dns-config-volume
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  hostNetwork: true
+  serviceAccount: minikube-ingress-dns
+  nodeSelector:
+    minikube.k8s.io/primary: "true"
+  volumes:
+  - configMap:
+      defaultMode: 420
+      name: minikube-ingress-dns
+    name: minikube-ingress-dns-config-volume

@@ -1,4 +1,4 @@
-.PHONY: all tools fmt swagger test e2e lint clean run local-up local-down open-local-redisinsight local-cluster-build local-cluster-up local-cluster-down local-cluster-clean local-cluster-healthcheck local-cluster-logs open-local-cluster-redisinsight
+.PHONY: all tools fmt swagger test e2e lint clean run local-up local-down open-local-redisinsight local-cluster-build local-cluster-up local-cluster-down local-cluster-clean local-cluster-healthcheck local-cluster-logs open-local-cluster-redisinsight e2e-setup e2e-deploy e2e-generate e2e-test e2e-clean e2e-imagegen-build
 
 # Default target: format, generate swagger docs, and build
 all: fmt swagger build
@@ -39,10 +39,67 @@ test:
 	@echo "Running unit tests..."
 	@go test -v $$(go list ./... | grep -v /test/e2e) -race
 
-# Run end-to-end tests
+# Run end-to-end tests (simple mode - requires manual setup)
 e2e:
 	@echo "Running e2e tests..."
-	@go test -v ./test/e2e/...
+	@go test -v -tags=e2e ./test/e2e/...
+
+# E2E Variables
+E2E_WORKERS ?= 10
+E2E_ITERATIONS ?= 10000
+E2E_VARIANTS ?= 100
+E2E_MINIKUBE_IP := $(shell minikube ip -p barnacle-e2e 2>/dev/null || echo "localhost")
+E2E_REGISTRY ?= $(E2E_MINIKUBE_IP):30500
+E2E_MANIFEST ?= e2e-images.json
+E2E_KUBE_QPS ?= 20000
+E2E_KUBE_BURST ?= 40000
+E2E_RESULTS ?= ./test/e2e/out
+
+# Create minikube cluster, build barnacle image, and deploy infrastructure
+e2e-setup:
+	@echo "Setting up e2e environment..."
+	@./hack/e2e/minikube/setup.sh setup
+
+# Deploy barnacle + redis + local registry (assumes cluster exists)
+e2e-deploy:
+	@echo "Deploying e2e infrastructure..."
+	@./hack/e2e/minikube/setup.sh deploy
+
+# Build the e2e image generator tool
+e2e-imagegen-build:
+	@echo "Building e2e image generator..."
+	@go build -o bin/e2e-imagegen ./cmd/e2e-imagegen
+
+# Generate test images (standalone, can re-run)
+# Usage: make e2e-generate
+#        make e2e-generate E2E_VARIANTS=50 E2E_REGISTRY=192.168.49.2:30500
+e2e-generate: e2e-imagegen-build
+	@echo "Generating $(E2E_VARIANTS) test images to $(E2E_REGISTRY)..."
+	@./bin/e2e-imagegen \
+		-registry $(E2E_REGISTRY) \
+		-variants $(E2E_VARIANTS) \
+		-output $(E2E_MANIFEST)
+
+# Run e2e tests against existing images
+# Usage: make e2e-test
+#        make e2e-test E2E_WORKERS=20 E2E_ITERATIONS=50000
+e2e-test:
+	@mkdir -p $(E2E_RESULTS)
+	@echo "Running e2e tests with $(E2E_WORKERS) workers, $(E2E_ITERATIONS) iterations..."
+	@go test -v -tags=e2e ./test/e2e/... \
+		-workers=$(E2E_WORKERS) \
+		-iterations=$(E2E_ITERATIONS) \
+		-manifest=$(CURDIR)/$(E2E_MANIFEST) \
+		-barnacle-node-addr=$(E2E_MINIKUBE_IP):30080 \
+		-kube-qps=$(E2E_KUBE_QPS) \
+		-kube-burst=$(E2E_KUBE_BURST) \
+		-results $(CURDIR)/$(E2E_RESULTS) \
+		-timeout 0
+
+# Teardown the e2e cluster
+e2e-clean:
+	@echo "Cleaning up e2e environment..."
+	@./hack/e2e/minikube/setup.sh teardown
 
 # Run linter
 lint:

@@ -40,3 +40,31 @@ func GetDiskUsage(path string) (*DiskUsageStats, error) {
 		UsedBytes:  usedBytes,
 	}, nil
 }
+
+// ApplySizeLimit adjusts DiskUsageStats to respect a configured size limit.
+// If sizeLimit is 0, the stats are returned unchanged.
+// If sizeLimit is set:
+//   - TotalBytes is set to min(actualTotal, sizeLimit)
+//   - UsedBytes remains unchanged (actual disk usage)
+//   - FreeBytes is calculated as: max(0, TotalBytes - UsedBytes)
+func ApplySizeLimit(stats *DiskUsageStats, sizeLimit uint64) *DiskUsageStats {
+	if sizeLimit == 0 {
+		return stats
+	}
+
+	result := *stats // Copy to avoid mutating original
+
+	// Cap TotalBytes at the configured limit
+	if sizeLimit < result.TotalBytes {
+		result.TotalBytes = sizeLimit
+	}
+
+	// Recalculate FreeBytes based on limited total
+	if result.UsedBytes >= result.TotalBytes {
+		result.FreeBytes = 0
+	} else {
+		result.FreeBytes = result.TotalBytes - result.UsedBytes
+	}
+
+	return &result
+}

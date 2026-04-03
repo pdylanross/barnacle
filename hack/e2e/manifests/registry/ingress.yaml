@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: registry
+  namespace: barnacle-e2e
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/part-of: barnacle-e2e
+  annotations:
+    # Allow large image uploads (10GB max)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10g"
+    # Increase timeouts for large uploads
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: registry.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: registry
+                port:
+                  number: 5000

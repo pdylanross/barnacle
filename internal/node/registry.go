@@ -53,10 +53,11 @@ type Info struct {
 
 // Registry manages node registration and health tracking.
 type Registry struct {
-	config      *configuration.NodeHealthConfig
-	cacheConfig *configuration.CacheConfiguration
-	logger      *zap.Logger
-	redisClient *redis.Client
+	config         *configuration.NodeHealthConfig
+	cacheConfig    *configuration.CacheConfiguration
+	tierSizeLimits []uint64 // Pre-parsed size limits per tier (0 = no limit)
+	logger         *zap.Logger
+	redisClient    *redis.Client
 
 	nodeID string
 	status Status
@@ -81,13 +82,27 @@ func NewRegistry(
 		nodeID = hostname
 	}
 
+	// Pre-parse tier size limits to avoid repeated string parsing
+	var tierSizeLimits []uint64
+	if cacheConfig != nil {
+		tierSizeLimits = make([]uint64, len(cacheConfig.Disk.Tiers))
+		for i, tier := range cacheConfig.Disk.Tiers {
+			limit, err := tier.GetSizeLimitBytes()
+			if err != nil {
+				return nil, fmt.Errorf("tier %d: %w", tier.Tier, err)
+			}
+			tierSizeLimits[i] = limit
+		}
+	}
+
 	r := &Registry{
-		config:      config,
-		cacheConfig: cacheConfig,
-		logger:      logger.Named("node-registry"),
-		redisClient: redisClient,
-		nodeID:      nodeID,
-		status:      StatusStarting,
+		config:         config,
+		cacheConfig:    cacheConfig,
+		tierSizeLimits: tierSizeLimits,
+		logger:         logger.Named("node-registry"),
+		redisClient:    redisClient,
+		nodeID:         nodeID,
+		status:         StatusStarting,
 	}
 
 	r.logger.Info("node registry initialized",
@@ -140,6 +155,12 @@ func (r *Registry) collectStats() Stats {
 			stats.TierDiskUsage[i] = DiskUsageStats{Path: tier.Path}
 			continue
 		}
+
+		// Apply pre-parsed size limit if set
+		if i < len(r.tierSizeLimits) && r.tierSizeLimits[i] > 0 {
+			diskUsage = ApplySizeLimit(diskUsage, r.tierSizeLimits[i])
+		}
+
 		stats.TierDiskUsage[i] = *diskUsage
 	}
 

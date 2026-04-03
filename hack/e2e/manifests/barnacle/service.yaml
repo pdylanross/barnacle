@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: barnacle
+  namespace: barnacle-e2e
+  labels:
+    app.kubernetes.io/name: barnacle
+    app.kubernetes.io/part-of: barnacle-e2e
+spec:
+  selector:
+    app.kubernetes.io/name: barnacle
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      name: http
+  type: NodePort

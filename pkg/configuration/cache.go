@@ -3,6 +3,8 @@ package configuration
 import (
 	"fmt"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // Default disk cache settings.
@@ -42,6 +44,12 @@ type DiskTierConfiguration struct {
 	// during rebalancing. This prevents the rebalancer from filling the tier completely,
 	// leaving headroom for new hot blobs. Defaults to 0.0 (no reservation).
 	ReservePercent float64 `koanf:"reservePercent"`
+
+	// SizeLimit is an optional maximum size for this tier's cache storage.
+	// Accepts Kubernetes-style quantities: "5Gi", "10G", "500Mi", "1Ti", etc.
+	// When set, capacity planning uses this value instead of the actual
+	// filesystem size. If empty, the actual filesystem capacity is used.
+	SizeLimit string `koanf:"sizeLimit"`
 }
 
 // GetReservePercent returns the reserve percent, using the default if not set.
@@ -50,6 +58,20 @@ func (t *DiskTierConfiguration) GetReservePercent() float64 {
 		return DefaultTierReservePercent
 	}
 	return t.ReservePercent
+}
+
+// GetSizeLimitBytes parses SizeLimit and returns the value in bytes.
+// Returns 0 if SizeLimit is empty (meaning no limit).
+// Returns an error if the format is invalid.
+func (t *DiskTierConfiguration) GetSizeLimitBytes() (uint64, error) {
+	if t.SizeLimit == "" {
+		return 0, nil
+	}
+	q, err := resource.ParseQuantity(t.SizeLimit)
+	if err != nil {
+		return 0, fmt.Errorf("invalid sizeLimit %q: %w", t.SizeLimit, err)
+	}
+	return uint64(q.Value()), nil
 }
 
 // Validate checks that the disk tier configuration is valid.
@@ -65,6 +87,12 @@ func (t *DiskTierConfiguration) Validate() error {
 	if t.ReservePercent < 0 || t.ReservePercent >= 1.0 {
 		return fmt.Errorf("%w: disk tier %d reservePercent must be >= 0 and < 1.0, got %f",
 			ErrInvalidConfiguration, t.Tier, t.ReservePercent)
+	}
+	if t.SizeLimit != "" {
+		if _, err := t.GetSizeLimitBytes(); err != nil {
+			return fmt.Errorf("%w: disk tier %d: %v",
+				ErrInvalidConfiguration, t.Tier, err)
+		}
 	}
 	return nil
 }
